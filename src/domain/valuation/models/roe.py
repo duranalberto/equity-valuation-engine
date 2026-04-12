@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import List
-from ..base import ValuationResult, ValuationInput, ValuationParams
+from ..base import ValuationResult, ValuationInput, ValuationParams, ValuationReport
 
 
 @dataclass
 class ROEParameters(ValuationParams):
-    margin_of_safty: float = 0.20 
+    margin_of_safety: float = 0.20
     discount_rate: float = 0.10
     projection_years: int = 10
 
@@ -18,6 +18,8 @@ class ROEValuationInput(ValuationInput):
 
 @dataclass
 class ROEValuationResult(ValuationResult):
+    growth_rates: List[float]
+    valuation_status: str
     shareholders_equity_progression: List[float]
     dividend_progression: List[float]
     npv_dividend_progression: List[float]
@@ -25,5 +27,9 @@ class ROEValuationResult(ValuationResult):
     required_value: float
     npv_required_value: float
     npv_dividends: float
-    intrisic_value: float
+    intrinsic_value: float
 
+
+@dataclass
+class ROEValuationReport(ValuationReport):
+    params: ROEParameters

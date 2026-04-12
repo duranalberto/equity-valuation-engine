@@ -5,6 +5,7 @@ from typing import List, Type, NamedTuple, Callable, Dict
 
 from domain import StockMetrics
 from domain.valuation.valuation_manager import ValuationManager
+from domain.valuation.base import ValuationReport
 from domain.valuation.policies import ValuationCheckResult
 
 from application import DCFManager, PEManager, ROEManager, MetricsLoader
@@ -21,7 +22,6 @@ class RunConfig(NamedTuple):
     print_json: bool
 
 
-
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ VALUATION_MANAGERS: List[Type[ValuationManager]] = [
     ROEManager,
 ]
 
-CLI_PRESENTERS: Dict[Type[ValuationManager], Callable] = {
+CLI_PRESENTERS: Dict[Type[ValuationManager], Callable[[StockMetrics, ValuationReport], None]] = {
     DCFManager: dcf_print,
     PEManager: pe_print,
     ROEManager: roe_print,
@@ -58,7 +58,7 @@ def display_stock_metrics(stock_metrics: StockMetrics, print_json: bool) -> None
 
 def run_suitability_check(
     manager: ValuationManager,
-    method_name: str
+    method_name: str,
 ) -> ValuationCheckResult:
     """Run the suitability check for a valuation manager."""
     logger.info("Running suitability check for %s...", method_name)
@@ -66,11 +66,7 @@ def run_suitability_check(
     try:
         result = manager.validate_metrics()
     except Exception as e:
-        logger.error(
-            "Error during %s suitability evaluation: %s",
-            method_name,
-            e,
-        )
+        logger.error("Error during %s suitability evaluation: %s", method_name, e)
         result = ValuationCheckResult(
             ticker=manager.stock_metrics.profile.ticker,
             is_suitable=False,
@@ -79,10 +75,8 @@ def run_suitability_check(
             factors=[],
         )
 
-    logger.info("Suitability Check Results for %s:", method_name)
     for factor in result.factors:
         logger.info(" [%s] %s", factor.severity.value, factor.message)
-
     logger.info("Total Severity Score: %s", result.total_severity_score)
     logger.info("Interpretation: %s", result.interpretation)
 
@@ -120,23 +114,18 @@ def run_valuation(
         if print_cli:
             presenter = CLI_PRESENTERS.get(manager_cls)
             if not presenter:
-                logger.warning(
-                    "No CLI presenter registered for %s.",
-                    manager_cls.__name__,
-                )
+                logger.warning("No CLI presenter registered for %s.", manager_cls.__name__)
             else:
                 print(f"--- {method_name} Result CLI ---")
-                presenter(valuation_report)
+                presenter(manager.stock_metrics, valuation_report)
 
         if not print_cli and not print_json:
             logger.info(
-                "%s valuation completed successfully (no output flags).",
-                method_name,
+                "%s valuation completed successfully (no output flags).", method_name
             )
 
     except Exception as e:
         logger.error("Failed to run %s analysis: %s", method_name, e)
-
 
 
 def run_for_ticker(
@@ -160,9 +149,7 @@ def run_for_ticker(
 
 def parse_arguments() -> RunConfig:
     """Parse CLI arguments."""
-    parser = argparse.ArgumentParser(
-        description="Run multiple stock valuations."
-    )
+    parser = argparse.ArgumentParser(description="Run multiple stock valuations.")
     parser.add_argument("ticker", nargs="?", help="Ticker symbol (e.g., AAPL)")
 
     output_group = parser.add_mutually_exclusive_group()

@@ -1,18 +1,18 @@
-from .yfinance_fields import(
-    CurrencyType, YfLabelField, YfFinancialField
+from .yfinance_fields import (
+    CurrencyType, YfLabelField, YfFinancialField,
 )
 from infrastructure.repositories.financial_repository import (
-    EnumField, Statement, Period, Action
+    EnumField, Statement, Period, Action,
 )
 from infrastructure.mappers.base_mapper import GenericMapper
 from infrastructure.mappers.stock_metrics_mapper import BaseStockMetricsMapper
 from domain.core.enums import Sectors
 from domain.metrics.stock import (
-    StockMetrics, CompanyProfile, Valuation, Financials, 
-    MarketData, CashFlow, BalanceSheet
+    StockMetrics, CompanyProfile, Valuation, Financials,
+    MarketData, CashFlow, BalanceSheet,
 )
 from .common_constants import (
-    SECTOR_LABEL, FINANCIAL_CURRENCY_LABEL, TRADING_CURRENCY_LABEL
+    SECTOR_LABEL, FINANCIAL_CURRENCY_LABEL, TRADING_CURRENCY_LABEL,
 )
 
 
@@ -25,22 +25,22 @@ class CompanyProfileMapper(GenericMapper):
     @property
     def mapping(self):
         return {
-            CompanyProfile.ticker: YfLabelField(label='symbol'),
-            CompanyProfile.company_name: YfLabelField(label='longName'),
+            CompanyProfile.ticker: YfLabelField(label="symbol"),
+            CompanyProfile.company_name: YfLabelField(label="longName"),
             CompanyProfile.sector: EnumField(label=SECTOR_LABEL, enum=Sectors),
-            CompanyProfile.industry: YfLabelField(label='industry'),
-            CompanyProfile.country: YfLabelField(label='country'),
+            CompanyProfile.industry: YfLabelField(label="industry"),
+            CompanyProfile.country: YfLabelField(label="country"),
             CompanyProfile.financial_currency: YfLabelField(label=FINANCIAL_CURRENCY_LABEL),
             CompanyProfile.trading_currency: YfLabelField(label=TRADING_CURRENCY_LABEL),
-            CompanyProfile.exchange: YfLabelField(label='exchange'),
-            CompanyProfile.quote_type: YfLabelField(label='quoteType'),
-            CompanyProfile.website: YfLabelField(label='website'),
+            CompanyProfile.exchange: YfLabelField(label="exchange"),
+            CompanyProfile.quote_type: YfLabelField(label="quoteType"),
+            CompanyProfile.website: YfLabelField(label="website"),
         }
 
 
 EPS_LABELS = [
     "eps", "earnings per share", "diluted earnings per share",
-    "basic earnings per share", "basic eps", "diluted eps",    
+    "basic earnings per share", "basic eps", "diluted eps",
     "earnings per share basic", "earnings per share diluted",
 ]
 
@@ -50,7 +50,7 @@ REVENUE_LABELS = [
     "operating revenue", "total operating revenue",
 ]
 
-NET_INCOMES_LABELS = [
+NET_INCOME_LABELS = [
     "net income", "net earnings",
     "netincome", "netearnings",
     "net_income", "net_earnings",
@@ -65,10 +65,11 @@ NET_INCOMES_LABELS = [
 ]
 
 _FINANCIAL_INCOME_TTM = {
-    'currency_type':CurrencyType.FINANCIAL,
-    'statement':Statement.INCOME,
-    'action':Action.GET_TTM_VALUE
+    "currency_type": CurrencyType.FINANCIAL,
+    "statement": Statement.INCOME,
+    "action": Action.GET_TTM_VALUE,
 }
+
 
 class FinancialsMapper(GenericMapper):
 
@@ -80,8 +81,7 @@ class FinancialsMapper(GenericMapper):
     def mapping(self):
         return {
             Financials.revenue_ttm: YfFinancialField(
-                label=REVENUE_LABELS,
-                **_FINANCIAL_INCOME_TTM
+                label=REVENUE_LABELS, **_FINANCIAL_INCOME_TTM
             ),
             Financials.gross_profit_ttm: YfFinancialField(
                 label=[
@@ -89,7 +89,7 @@ class FinancialsMapper(GenericMapper):
                     "grossprofit", "totalgrossprofit",
                     "gross_profit", "total_gross_profit",
                 ],
-                **_FINANCIAL_INCOME_TTM
+                **_FINANCIAL_INCOME_TTM,
             ),
             Financials.operating_income_ttm: YfFinancialField(
                 label=[
@@ -100,11 +100,10 @@ class FinancialsMapper(GenericMapper):
                     "income_from_operations",
                     "income from operation",
                 ],
-                **_FINANCIAL_INCOME_TTM
+                **_FINANCIAL_INCOME_TTM,
             ),
             Financials.net_income_ttm: YfFinancialField(
-                label=NET_INCOMES_LABELS,
-                **_FINANCIAL_INCOME_TTM
+                label=NET_INCOME_LABELS, **_FINANCIAL_INCOME_TTM
             ),
             Financials.ebit_ttm: YfFinancialField(
                 label=[
@@ -114,7 +113,7 @@ class FinancialsMapper(GenericMapper):
                     "profit before interest and taxes",
                     "operating profit before interest",
                 ],
-                **_FINANCIAL_INCOME_TTM
+                **_FINANCIAL_INCOME_TTM,
             ),
             Financials.ebt_ttm: YfFinancialField(
                 label=[
@@ -127,9 +126,8 @@ class FinancialsMapper(GenericMapper):
                     "income before tax expense", "income before income tax",
                     "profit before income taxes",
                     "earnings before income taxes",
-                    
                 ],
-                **_FINANCIAL_INCOME_TTM
+                **_FINANCIAL_INCOME_TTM,
             ),
             Financials.tax_expense_ttm: YfFinancialField(
                 label=[
@@ -141,9 +139,9 @@ class FinancialsMapper(GenericMapper):
                     "income tax benefit", "state income taxes",
                     "taxes and licenses", "federal income taxes",
                 ],
-                **_FINANCIAL_INCOME_TTM
+                **_FINANCIAL_INCOME_TTM,
             ),
-             Financials.interest_expense_ttm: YfFinancialField(
+            Financials.interest_expense_ttm: YfFinancialField(
                 label=[
                     "interest expense", "cost of debt",
                     "financing expense", "interest charges",
@@ -156,30 +154,30 @@ class FinancialsMapper(GenericMapper):
                     "net interest expense",
                     "interest and financing charges",
                 ],
-                **_FINANCIAL_INCOME_TTM
+                **_FINANCIAL_INCOME_TTM,
             ),
             Financials.revenue_ttm_prev: YfFinancialField(
                 label=REVENUE_LABELS,
                 currency_type=CurrencyType.FINANCIAL,
                 statement=Statement.INCOME,
-                action=Action.GET_TTM_PREV_VALUE
+                action=Action.GET_TTM_PREV_VALUE,
             ),
             Financials.net_income_ttm_prev: YfFinancialField(
-                label=NET_INCOMES_LABELS,
+                label=NET_INCOME_LABELS,
                 currency_type=CurrencyType.FINANCIAL,
                 statement=Statement.INCOME,
-                action=Action.GET_TTM_PREV_VALUE
+                action=Action.GET_TTM_PREV_VALUE,
             ),
             Financials.da_ttm: YfFinancialField(
                 label=[
-                    "depreciation and amortization", "depreciation", 
+                    "depreciation and amortization", "depreciation",
                     "amortization", "depreciationamortization",
-                    "depreciation and amortisation", "depreciation_and_amortization"
+                    "depreciation and amortisation", "depreciation_and_amortization",
                 ],
                 currency_type=CurrencyType.FINANCIAL,
                 statement=Statement.CASHFLOW,
-                action=Action.GET_TTM_VALUE
-            )
+                action=Action.GET_TTM_VALUE,
+            ),
         }
 
 
@@ -205,9 +203,10 @@ _CAPEX_LABELS = [
 ]
 
 _FINANCIAL_CASHFLOW = {
-    'currency_type':CurrencyType.FINANCIAL,
-    'statement':Statement.CASHFLOW,
+    "currency_type": CurrencyType.FINANCIAL,
+    "statement": Statement.CASHFLOW,
 }
+
 
 class CashFlowMapper(GenericMapper):
 
@@ -219,39 +218,28 @@ class CashFlowMapper(GenericMapper):
     def mapping(self):
         return {
             CashFlow.operating_cf_ttm: YfFinancialField(
-                label=_OPERATING_LABELS,
-                **_FINANCIAL_CASHFLOW,
-                action=Action.GET_TTM_VALUE
+                label=_OPERATING_LABELS, **_FINANCIAL_CASHFLOW,
+                action=Action.GET_TTM_VALUE,
             ),
             CashFlow.capex_ttm: YfFinancialField(
-                label=_CAPEX_LABELS,
-                **_FINANCIAL_CASHFLOW,
-                period=Period.QUARTERLY,
-                action=Action.GET_TTM_VALUE
+                label=_CAPEX_LABELS, **_FINANCIAL_CASHFLOW,
+                period=Period.QUARTERLY, action=Action.GET_TTM_VALUE,
             ),
             CashFlow.oper_cf_last_year: YfFinancialField(
-                label=_OPERATING_LABELS,
-                **_FINANCIAL_CASHFLOW,
-                period=Period.ANNUAL,
-                action=Action.GET_LATEST_VALUE
+                label=_OPERATING_LABELS, **_FINANCIAL_CASHFLOW,
+                period=Period.ANNUAL, action=Action.GET_LATEST_VALUE,
             ),
             CashFlow.latest_annual_capex: YfFinancialField(
-                label=_CAPEX_LABELS,
-                **_FINANCIAL_CASHFLOW,
-                period=Period.ANNUAL,
-                action=Action.GET_LATEST_VALUE
+                label=_CAPEX_LABELS, **_FINANCIAL_CASHFLOW,
+                period=Period.ANNUAL, action=Action.GET_LATEST_VALUE,
             ),
             CashFlow.oper_cf_last_quarter: YfFinancialField(
-                label=_OPERATING_LABELS,
-                **_FINANCIAL_CASHFLOW,
-                period=Period.QUARTERLY,
-                action=Action.GET_LATEST_VALUE
+                label=_OPERATING_LABELS, **_FINANCIAL_CASHFLOW,
+                period=Period.QUARTERLY, action=Action.GET_LATEST_VALUE,
             ),
             CashFlow.latest_quarter_capex: YfFinancialField(
-                label=_CAPEX_LABELS,
-                **_FINANCIAL_CASHFLOW,
-                period=Period.QUARTERLY,
-                action=Action.GET_LATEST_VALUE
+                label=_CAPEX_LABELS, **_FINANCIAL_CASHFLOW,
+                period=Period.QUARTERLY, action=Action.GET_LATEST_VALUE,
             ),
             CashFlow.dividends_paid_ttm: YfFinancialField(
                 label=[
@@ -261,7 +249,7 @@ class CashFlowMapper(GenericMapper):
                 ],
                 currency_type=CurrencyType.FINANCIAL,
                 statement=Statement.CASHFLOW,
-                action=Action.GET_TTM_VALUE
+                action=Action.GET_TTM_VALUE,
             ),
             CashFlow.share_buybacks_ttm: YfFinancialField(
                 label=[
@@ -278,17 +266,18 @@ class CashFlowMapper(GenericMapper):
                 ],
                 currency_type=CurrencyType.FINANCIAL,
                 statement=Statement.CASHFLOW,
-                action=Action.GET_TTM_VALUE
+                action=Action.GET_TTM_VALUE,
             ),
         }
 
 
 _FINANCIAL_BALANCE_SHEET_LAST_VALUE = {
-    'currency_type':CurrencyType.FINANCIAL,
-    'statement':Statement.BALANCE_SHEET,
-    'period':Period.QUARTERLY,
-    'action':Action.GET_LATEST_VALUE
+    "currency_type": CurrencyType.FINANCIAL,
+    "statement": Statement.BALANCE_SHEET,
+    "period": Period.QUARTERLY,
+    "action": Action.GET_LATEST_VALUE,
 }
+
 
 class BalanceSheetMapper(GenericMapper):
 
@@ -298,108 +287,82 @@ class BalanceSheetMapper(GenericMapper):
 
     @property
     def mapping(self):
-        return  {
+        return {
             BalanceSheet.current_assets: YfFinancialField(
                 label=[
-                    "total current assets",
-                    "current assets",
-                    "totalcurrentassets",
-                    "currentassets",
-                    "total_current_assets",
-                    "current assets total",
+                    "total current assets", "current assets",
+                    "totalcurrentassets", "currentassets",
+                    "total_current_assets", "current assets total",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.current_liabilities: YfFinancialField(
                 label=[
-                    "total current liabilities",
-                    "current liabilities",
-                    "totalcurrentliabilities",
-                    "currentliabilities",
-                    "total_current_liabilities",
-                    "current liabilities total",
+                    "total current liabilities", "current liabilities",
+                    "totalcurrentliabilities", "currentliabilities",
+                    "total_current_liabilities", "current liabilities total",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.inventory: YfFinancialField(
                 label=[
                     "inventory", "inventory, net",
-                    "merchandise inventory",
-                    "raw materials", "inventory_net",
-                    "finished goods", "inventories",
+                    "merchandise inventory", "raw materials",
+                    "inventory_net", "finished goods", "inventories",
                     "work in progress",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.total_debt: YfFinancialField(
                 label=[
-                    "total debt",
-                    "long term debt",
-                    "current debt",
-                    "short term debt",
-                    "long term borrowings",
-                    "short term borrowings",
-                    "total borrowings",
-                    "interest bearing debt",
-                    "gross debt",
-                    "funded debt",
-                    "notes payable",
-                    "bank loans",
-                    "debt obligations",
+                    "total debt", "long term debt", "current debt",
+                    "short term debt", "long term borrowings",
+                    "short term borrowings", "total borrowings",
+                    "interest bearing debt", "gross debt", "funded debt",
+                    "notes payable", "bank loans", "debt obligations",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.total_equity: YfFinancialField(
                 label=[
-                    "stockholders equity",
-                    "common stock equity",
+                    "stockholders equity", "common stock equity",
                     "total equity gross minority interest",
                     "total shareholders equity",
                     "total stockholder equity",
-                    "shareholders equity",
-                    "owners equity",
+                    "shareholders equity", "owners equity",
                     "total equity",
                     "equity attributable to shareholders",
                     "total partners capital",
-                    "stockholders' equity",
-                    "equity capital",
+                    "stockholders' equity", "equity capital",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.cash_and_equivalents: YfFinancialField(
                 label=[
                     "cash and cash equivalents",
-                    "cash and equivalents",
-                    "cash",
+                    "cash and equivalents", "cash",
                     "cash & short term investments",
                     "short term investments",
                     "cash and short term investments",
-                    "cash & equivalents",
-                    "cash equivalents",
+                    "cash & equivalents", "cash equivalents",
                     "cash and marketable securities",
-                    "marketable securities",
-                    "cash on hand",
-                    "liquid assets",
-                    "cash and bank balances",
+                    "marketable securities", "cash on hand",
+                    "liquid assets", "cash and bank balances",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.total_assets: YfFinancialField(
                 label=[
-                    "total assets",
-                    "totalassets",
-                    "total_assets",
-                    "assets",
+                    "total assets", "totalassets",
+                    "total_assets", "assets",
                     "total consolidated assets",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
             ),
             BalanceSheet.total_liabilities: YfFinancialField(
-                label = [
-                    "total liabilities",
-                    "total liab",
-                    "totalliabilities",
-                    "total_liabilities",
+                label=[
+                    "total liabilities", "total liab",
+                    "totalliabilities", "total_liabilities",
                     "liabilities",
                     "total liabilities net minority interest",
                     "total_liabilities_net_minority_interest",
@@ -408,8 +371,8 @@ class BalanceSheetMapper(GenericMapper):
                     "total-liabilities-net-minority-interest",
                     "totalliabilities_netminorityinterest",
                 ],
-                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE
-            )
+                **_FINANCIAL_BALANCE_SHEET_LAST_VALUE,
+            ),
         }
 
 
@@ -422,37 +385,56 @@ class MarketDataMapper(GenericMapper):
     @property
     def mapping(self):
         return {
-            MarketData.current_price: YfLabelField(label='currentPrice', currency_type=CurrencyType.TRADING),
-            MarketData.shares_outstanding: YfLabelField(label='sharesOutstanding'), 
-            MarketData.market_cap: YfLabelField(label='marketCap', currency_type=CurrencyType.TRADING),
-            MarketData.beta: YfLabelField(label='beta'),
-            MarketData.pe_ttm: YfLabelField(label='trailingPE'),
-            MarketData.low_52_week: YfLabelField(label='fiftyTwoWeekLow', currency_type=CurrencyType.TRADING),
-            MarketData.high_52_week: YfLabelField(label='fiftyTwoWeekHigh', currency_type=CurrencyType.TRADING),
-            MarketData.fifty_day_avg: YfLabelField(label='fiftyDayAverage', currency_type=CurrencyType.TRADING),
-            MarketData.two_hundred_day_avg: YfLabelField(label='twoHundredDayAverage', currency_type=CurrencyType.TRADING),
-            MarketData.volume: YfLabelField(label='volume', currency_type=CurrencyType.TRADING),
-            MarketData.avg_volume: YfLabelField(label='averageVolume,averageDailyVolume10Day', currency_type=CurrencyType.TRADING),
+            MarketData.current_price: YfLabelField(
+                label="currentPrice", currency_type=CurrencyType.TRADING
+            ),
+            MarketData.shares_outstanding: YfLabelField(label="sharesOutstanding"),
+            MarketData.market_cap: YfLabelField(
+                label="marketCap", currency_type=CurrencyType.TRADING
+            ),
+            MarketData.beta: YfLabelField(label="beta"),
+            MarketData.pe_ttm: YfLabelField(label="trailingPE"),
+            MarketData.low_52_week: YfLabelField(
+                label="fiftyTwoWeekLow", currency_type=CurrencyType.TRADING
+            ),
+            MarketData.high_52_week: YfLabelField(
+                label="fiftyTwoWeekHigh", currency_type=CurrencyType.TRADING
+            ),
+            MarketData.fifty_day_avg: YfLabelField(
+                label="fiftyDayAverage", currency_type=CurrencyType.TRADING
+            ),
+            MarketData.two_hundred_day_avg: YfLabelField(
+                label="twoHundredDayAverage", currency_type=CurrencyType.TRADING
+            ),
+            MarketData.volume: YfLabelField(
+                label="volume", currency_type=CurrencyType.TRADING
+            ),
+            # Design 6: was "averageVolume,averageDailyVolume10Day" (comma-split hack).
+            # Now an explicit list — the intent is visible at the definition site.
+            MarketData.avg_volume: YfLabelField(
+                label=["averageVolume", "averageDailyVolume10Day"],
+                currency_type=CurrencyType.TRADING,
+            ),
             MarketData.eps_ttm: YfFinancialField(
                 label=EPS_LABELS,
                 currency_type=CurrencyType.NONE,
                 statement=Statement.INCOME,
-                action=Action.GET_TTM_VALUE
+                action=Action.GET_TTM_VALUE,
             ),
             MarketData.last_quarter_eps: YfFinancialField(
                 label=EPS_LABELS,
                 currency_type=CurrencyType.NONE,
                 statement=Statement.INCOME,
                 period=Period.QUARTERLY,
-                action=Action.GET_LATEST_VALUE
+                action=Action.GET_LATEST_VALUE,
             ),
             MarketData.last_year_eps: YfFinancialField(
                 label=EPS_LABELS,
                 currency_type=CurrencyType.NONE,
                 statement=Statement.INCOME,
                 period=Period.ANNUAL,
-                action=Action.GET_LATEST_VALUE
-            )
+                action=Action.GET_LATEST_VALUE,
+            ),
         }
 
 
@@ -464,10 +446,10 @@ class ValuationMapper(GenericMapper):
 
     @property
     def mapping(self):
-            return {
-                Valuation.cost_of_debt: YfLabelField(label='costOfDebt'),
-                Valuation.corporate_tax_rate: YfLabelField(label='corporateTaxRate'),
-            }
+        return {
+            Valuation.cost_of_debt: YfLabelField(label="costOfDebt"),
+            Valuation.corporate_tax_rate: YfLabelField(label="corporateTaxRate"),
+        }
 
 
 class StockMetricsMapper(BaseStockMetricsMapper):
@@ -486,4 +468,3 @@ class StockMetricsMapper(BaseStockMetricsMapper):
             StockMetrics.market_data: MarketDataMapper(),
             StockMetrics.valuation: ValuationMapper(),
         }
-

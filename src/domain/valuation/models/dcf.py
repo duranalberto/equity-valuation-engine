@@ -6,12 +6,12 @@ from ..base import ValuationReport, ValuationParams, ValuationInput, ValuationRe
 
 @dataclass
 class DCFParameters(ValuationParams):
-    margin_of_sefty: float = 0.20
+    margin_of_safety: float = 0.20
     risk_free_rate: float = 0.045
     market_risk_premium: float = 0.060
     terminal_growth_rate: float = 0.025
     projection_years: int = 10
-    
+
 
 @dataclass
 class DCFInputData(ValuationInput):
@@ -21,6 +21,8 @@ class DCFInputData(ValuationInput):
 
 @dataclass
 class DCFValuationResult(ValuationResult):
+    growth_rates: List[float]
+    valuation_status: str
     fcf_projections: List[float]
     dcf: DiscountedCashFlow
     intrinsic_value_per_share: float
@@ -30,4 +32,3 @@ class DCFValuationResult(ValuationResult):
 @dataclass
 class DCFValuationReport(ValuationReport):
     wacc: WACC
-
