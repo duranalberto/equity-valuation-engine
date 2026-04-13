@@ -1,6 +1,13 @@
+"""
+currency_service.py — FX rate resolution with caching and fallback.
+
+Fix: the bare ``print()`` call on the fallback path has been replaced with
+``logger.warning()`` so fallback messages flow through the structured
+logging system rather than bypassing it.
+"""
 import logging
 import time
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 import requests
 
@@ -67,16 +74,17 @@ def get_rate_to_usd(currency: str) -> float:
             _store_cached_rate(src, rate)
             return rate
         else:
-            logger.warning(f"Received invalid FX rate for {src}: {raw_rate}")
-    except Exception as e:
-        logger.warning(f"FX API failure for {src}: {e}")
+            logger.warning("Received invalid FX rate for %s: %s", src, raw_rate)
+    except Exception as exc:
+        logger.warning("FX API failure for %s: %s", src, exc)
 
     fallback = FALLBACK_FX_RATES.get(src)
     if fallback is None:
-        logger.warning(f"No fallback FX rate for {src}; defaulting to 1.0")
+        logger.warning(
+            "No fallback FX rate found for currency %s; defaulting to 1.0", src
+        )
         fallback = 1.0
 
-    print('Fallback currency multiplier set to ', fallback)
+    logger.warning("Using fallback FX rate for %s: %.6f", src, fallback)
     _store_cached_rate(src, fallback)
     return fallback
-

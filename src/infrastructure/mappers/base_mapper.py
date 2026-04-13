@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, get_origin, get_args, Union, Type
+from typing import Dict, Any, get_origin, get_args, get_type_hints, Union, Type
 from enum import Enum
 from dataclasses import is_dataclass
 
@@ -19,47 +19,35 @@ class GenericMapper(ABC):
     def mapping(self) -> Dict[Any, Any]:
         raise NotImplementedError
 
-
     def _normalize_key(self, key: Any) -> str:
-        """
-        Normalize mapping keys to string field names.
-
-        Accepts:
-        - string keys
-        - dataclass field descriptors (bound using bindable_dataclass)
-        Rejects:
-        - Enum members in CLASS MODE
-        """
         if isinstance(key, str):
             return key
 
         cls = self.target_type
-        
+
         if issubclass(cls, Enum):
             if isinstance(key, cls):
                 return key
             raise ValueError(
                 f"Invalid Enum mapping key: {key!r}. Expected member of {cls.__name__}."
             )
-            
+
         if is_dataclass(cls):
             for name, field in cls.__dataclass_fields__.items():
                 if key is field:
                     return name
-            
+
             if isinstance(key, Enum):
                 raise ValueError(
                     f"Invalid mapping key {key!r}: Enum values cannot be used as keys "
-                    f"in CLASS MODE. Use the dataclass field instead, e.g. CompanyProfile.sector."
+                    f"in CLASS MODE. Use the dataclass field instead."
                 )
 
         raise ValueError(f"Invalid mapping key: {key!r}")
 
-
     @property
     def normalized_mapping(self) -> Dict[str, Any]:
         return {self._normalize_key(k): v for k, v in self.mapping.items()}
-
 
     def validate(self) -> None:
         cls = self.target_type
@@ -67,15 +55,12 @@ class GenericMapper(ABC):
         if issubclass(cls, Enum):
             enum_keys = set(cls)
             mapping_keys = set(self.mapping.keys())
-
             extra = mapping_keys - enum_keys
             missing = enum_keys - mapping_keys
-
             if extra:
                 raise ValueError(f"Invalid Enum keys for mapper of {cls.__name__}: {extra}")
             if missing:
                 raise ValueError(f"Missing Enum keys for mapper of {cls.__name__}: {missing}")
-
             self._validate_unique_values()
             return
 
@@ -96,18 +81,11 @@ class GenericMapper(ABC):
 
         self._validate_unique_values()
 
-
     def _validate_unique_values(self) -> None:
-        """
-        Ensures all mapping values are unique.
-        Raises ValueError if duplicates are found.
-        """
         values = list(self.normalized_mapping.values())
         duplicates = {v for v in values if values.count(v) > 1}
-
         if duplicates:
             raise ValueError(f"Mapper has duplicated output values: {duplicates}")
-
 
     def __getitem__(self, key: Any) -> Any:
         return self.normalized_mapping[self._normalize_key(key)]
@@ -116,10 +94,6 @@ class GenericMapper(ABC):
         return self.normalized_mapping.items()
 
     def get_key_from_value(self, value: Any) -> str:
-        """
-        Returns field name for the given mapped value.
-        If values are strings, comparison is case-insensitive.
-        """
         for k, v in self.normalized_mapping.items():
             if isinstance(v, str) and isinstance(value, str):
                 if v.lower() == value.lower():
@@ -127,9 +101,7 @@ class GenericMapper(ABC):
             else:
                 if v == value:
                     return k
-
         raise KeyError(f"Value not found in mapper: {value!r}")
-
 
     @staticmethod
     def is_optional_type(t: Any) -> bool:
@@ -137,8 +109,28 @@ class GenericMapper(ABC):
 
     @staticmethod
     def extract_domain(cls: type) -> Dict[str, Any]:
+        """
+        Return the resolved type annotations for ``cls``.
+
+        Uses ``typing.get_type_hints()`` rather than ``cls.__annotations__``
+        so that PEP-563 stringified annotations (produced by
+        ``from __future__ import annotations``) are evaluated before
+        ``is_optional_type`` inspects them.  Without this, every
+        ``Optional[X]`` field appears as the string ``"Optional[X]"``,
+        ``get_origin`` returns ``None``, and ``is_optional_type`` incorrectly
+        reports the field as required — causing the mapper coverage check to
+        reject any class that uses future annotations.
+
+        Falls back to ``__annotations__`` if evaluation fails (e.g. genuine
+        unresolvable forward references).
+        """
+        try:
+            hints = get_type_hints(cls)
+            if hints:
+                return hints
+        except Exception:
+            pass
         ann = getattr(cls, "__annotations__", None)
         if not ann:
             raise TypeError(f"Class {cls.__name__} has no type annotations.")
         return ann
-

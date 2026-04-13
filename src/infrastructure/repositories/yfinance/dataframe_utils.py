@@ -228,7 +228,6 @@ def get_ordered_numeric_series(
 
     label_list = [labels] if isinstance(labels, str) else labels
 
-    # Fix 2: skip normalization when the DataFrame was pre-normalized in __init__.
     working_df = df if already_normalized else normalize_df_index(df)
 
     idx = _find_row_index(working_df, label_list)
@@ -243,10 +242,6 @@ def get_ordered_numeric_series(
     numeric = pd.to_numeric(ordered, errors="coerce").dropna()
     return numeric if not numeric.empty else None
 
-
-# ---------------------------------------------------------------------------
-# TTM calculation with date-span validation (Design 8)
-# ---------------------------------------------------------------------------
 
 _TTM_MIN_DAYS = 270   # ~9 months  — below this, quarters are too close together
 _TTM_MAX_DAYS = 400   # ~13 months — above this, there may be a gap or restatement
@@ -293,7 +288,6 @@ def calculate_ttm_from_series(
     if len(window) < 4 or window.isna().any():
         return None
 
-    # Design 8: date-span validation.
     try:
         dates = pd.to_datetime(window.index, errors="raise")
         span_days = int((dates.max() - dates.min()).days)
@@ -308,7 +302,6 @@ def calculate_ttm_from_series(
             return None
 
     except Exception:
-        # Column labels are not date-parseable — skip span check.
         pass
 
     return float(window.sum())
