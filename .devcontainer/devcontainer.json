@@ -1,0 +1,59 @@
+{
+  "name": "equity-valuation-engine",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "./"
+  },
+  "runArgs": [
+    "--network=host",
+    "--dns=8.8.8.8",
+    "--dns-search=."
+  ],
+  "remoteUser": "vscode",
+  "remoteEnv": {
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "PYTHONPATH": "${containerWorkspaceFolder}/src"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "remote.localPortHost": "allInterfaces",
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/usr/bin/zsh"
+          }
+        },
+        "editor.fontFamily": "'Fira Code', 'FiraCode Nerd Font', Consolas, 'Courier New', monospace",
+        "editor.fontLigatures": true,
+        "terminal.integrated.fontFamily": "'FiraCode Nerd Font'",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.extraPaths": [
+          "${containerWorkspaceFolder}/src"
+        ],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true
+        }
+      },
+      "extensions": [
+        "pkief.material-icon-theme",
+        "dunstontc.monokai-plusplus",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml",
+        "streetsidesoftware.code-spell-checker",
+        "davidanson.vscode-markdownlint",
+        "schmidsi.better-git-line-blame",
+        "mhutchie.git-graph",
+        "Fuzionix.file-tree-extractor",
+        "github.vscode-pull-request-github"
+      ]
+    }
+  },
+  "postCreateCommand": "pip install --upgrade pip && pip install -e '.[dev]'"
+}

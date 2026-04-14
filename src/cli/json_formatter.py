@@ -27,9 +27,15 @@ def _dataclass_tree_to_dict(obj: Any) -> Any:
     else:
         return obj
 
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, complex):
+        return str(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
+
 
 def to_json(obj: Any, indent: Optional[int] = 2, compact: bool = False) -> str:
     tree_dict = _dataclass_tree_to_dict(obj)
     if compact:
-        return json.dumps(tree_dict, separators=(",", ":"), ensure_ascii=False)
-    return json.dumps(tree_dict, indent=indent, ensure_ascii=False)
+        return json.dumps(tree_dict, separators=(",", ":"), ensure_ascii=False,default=json_serial)
+    return json.dumps(tree_dict, indent=indent, ensure_ascii=False,default=json_serial)
