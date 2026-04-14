@@ -12,4 +12,3 @@ class Sectors(Enum):
     REAL_ESTATE="real-estate"
     TECHNOLOGY="technology"
     UTILITIES="utilities"
-

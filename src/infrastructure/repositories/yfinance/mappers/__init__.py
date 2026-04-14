@@ -1,6 +1,11 @@
 from .common_constants import SECTOR_LABEL, FINANCIAL_CURRENCY_LABEL, TRADING_CURRENCY_LABEL
-from .yfinance_fields import CurrencyType, CurrencyField, YfLabelField, YfFinancialField
-from .stock_metrics_mapper import StockMetricsMapper
+from .yfinance_fields import CurrencyType, CurrencyField, YfLabelField, YfFinancialField, YfSeriesField
+from .stock_metrics_mapper import (
+    StockMetricsMapper,
+    FinancialsHistoryMapper,
+    CashFlowHistoryMapper,
+    BalanceSheetHistoryMapper,
+)
 from .enum_mappers import YahooSectorMapper
 
 
@@ -14,6 +19,10 @@ __all__ = [
     CurrencyField,
     YfLabelField,
     YfFinancialField,
+    YfSeriesField,
     sector_mapper,
-    StockMetricsMapper
+    StockMetricsMapper,
+    FinancialsHistoryMapper,
+    CashFlowHistoryMapper,
+    BalanceSheetHistoryMapper,
 ]

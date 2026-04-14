@@ -5,7 +5,7 @@ from typing import Dict
 class YahooSectorMapper(GenericMapper):
 
     @property
-    def target_type(self) -> type[Sectors]:
+    def target_type(self) -> type:
         return Sectors
 
     @property
@@ -23,4 +23,3 @@ class YahooSectorMapper(GenericMapper):
             Sectors.TECHNOLOGY: "technology",
             Sectors.UTILITIES: "utilities",
         }
-

@@ -1,10 +1,3 @@
-"""
-currency_service.py — FX rate resolution with caching and fallback.
-
-Fix: the bare ``print()`` call on the fallback path has been replaced with
-``logger.warning()`` so fallback messages flow through the structured
-logging system rather than bypassing it.
-"""
 import logging
 import time
 from typing import Dict, Optional
@@ -24,8 +17,7 @@ FALLBACK_FX_RATES: Dict[str, float] = {
     "SAR": 0.27, "AED": 0.27,
 }
 
-_RATE_CACHE: Dict[str, tuple[float, float]] = {}
-
+_RATE_CACHE: Dict[str, tuple] = {}
 CACHE_TTL = 86400
 _SESSION = requests.Session()
 
@@ -45,10 +37,6 @@ def _store_cached_rate(currency: str, rate: float) -> None:
 
 
 def get_rate_to_usd(currency: str) -> float:
-    """
-    Resolve the USD conversion rate for the given currency.
-    Always returns a valid float, falling back safely if needed.
-    """
     if not currency:
         logger.warning("Empty or None currency received, defaulting to USD rate 1.0")
         return 1.0
@@ -80,9 +68,7 @@ def get_rate_to_usd(currency: str) -> float:
 
     fallback = FALLBACK_FX_RATES.get(src)
     if fallback is None:
-        logger.warning(
-            "No fallback FX rate found for currency %s; defaulting to 1.0", src
-        )
+        logger.warning("No fallback FX rate found for currency %s; defaulting to 1.0", src)
         fallback = 1.0
 
     logger.warning("Using fallback FX rate for %s: %.6f", src, fallback)

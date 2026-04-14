@@ -1,20 +1,3 @@
-"""
-financial_repository.py — the repository protocol and field descriptor types.
-
-Changes from the original
---------------------------
-1. ``FinancialRepository`` is now ``@runtime_checkable`` so ``MetricsLoader``
-   (and any future caller) can do ``isinstance(loader, FinancialRepository)``
-   at construction time rather than discovering type mismatches at call-time.
-
-2. ``get_highest_price``, ``get_price_history``, and ``get_eps_history`` are
-   declared on the protocol.  They were previously called in ``MetricsLoader``
-   but absent from the interface — a new data-source author would not know
-   they were required.
-
-3. ``get_eps_data_quality`` is added to the protocol so callers can inspect
-   the provenance of EPS values without casting to a concrete type.
-"""
 import abc
 from dataclasses import dataclass
 from enum import Enum
@@ -30,13 +13,14 @@ class Statement(Enum):
 
 
 class Action(Enum):
-    GET_LATEST_VALUE = 0
-    GET_TTM_VALUE = 1
+    GET_LATEST_VALUE  = 0
+    GET_TTM_VALUE     = 1
     GET_TTM_PREV_VALUE = 2
+    GET_SERIES        = 3
 
 
 class Period(Enum):
-    ANNUAL = "annual"
+    ANNUAL    = "annual"
     QUARTERLY = "quarterly"
 
 
@@ -74,19 +58,21 @@ class FinancialField(BaseField):
 
     ``period`` usage
     ----------------
-    * For ``Action.GET_LATEST_VALUE`` the parser respects ``period`` — it
-      looks in the annual DataFrame when ``Period.ANNUAL`` is declared and in
-      the quarterly DataFrame when ``Period.QUARTERLY`` is declared.
-    * For ``Action.GET_TTM_VALUE`` and ``Action.GET_TTM_PREV_VALUE`` the parser
-      always aggregates four consecutive *quarterly* rows regardless of
-      ``period``.  ``period`` on a TTM field is therefore meaningless and
-      should be left as ``None`` to avoid confusion.
-    """
+    * ``GET_LATEST_VALUE`` — respects ``period`` (annual vs quarterly DataFrame).
+    * ``GET_TTM_VALUE`` / ``GET_TTM_PREV_VALUE`` — always aggregates four
+      consecutive quarterly rows; ``period`` is ignored on these actions.
+    * ``GET_SERIES`` — ``period`` controls which DataFrame is used.  When
+      ``period`` is ``None`` the loader defaults to ``QUARTERLY``.
 
-    label: List[str]
+    Returns
+    -------
+    ``GET_SERIES`` returns ``Optional[List[float]]`` (oldest first).
+    All other actions return ``Optional[float]``.
+    """
+    label:     List[str]
     statement: Statement
-    action: Action
-    period: Optional[Period] = None
+    action:    Action
+    period:    Optional[Period] = None
 
     def validate(self) -> None:
         if not isinstance(self.label, list) or not self.label:
@@ -101,18 +87,6 @@ class FinancialField(BaseField):
 class FinancialRepository(Protocol):
     """
     The interface every data-source loader must implement.
-
-    ``@runtime_checkable`` means ``isinstance(obj, FinancialRepository)``
-    works at runtime, enabling early failure in ``MetricsLoader.__init__``
-    rather than cryptic AttributeErrors later.
-
-    Implementing a new source
-    -------------------------
-    1. Create a concrete mapper tree (subclass ``BaseStockMetricsMapper``).
-    2. Create a loader class that implements every method below.
-    3. Pass ``loader_cls=YourLoader`` to ``MetricsLoader``.
-
-    No domain or application changes are needed.
     """
 
     mapper: BaseStockMetricsMapper
@@ -135,6 +109,29 @@ class FinancialRepository(Protocol):
 
     def get_latest_numeric(self, field: FinancialField) -> Optional[float]:
         """Return the most recent single numeric value for the field."""
+        ...
+
+    def get_series(
+        self,
+        field: FinancialField,
+        period: Optional[Period] = None,
+    ) -> Optional[List[float]]:
+        """
+        Return all available values for a statement row as a list, oldest first.
+
+        Parameters
+        ----------
+        field  : FinancialField descriptor (label / statement required;
+                 ``action`` is ignored — the caller is explicitly requesting
+                 a series).
+        period : Override the granularity.  When ``None`` the loader uses
+                 ``field.period`` if set, otherwise defaults to QUARTERLY.
+
+        Returns
+        -------
+        ``List[float]`` ordered oldest-first, or ``None`` when no data is
+        available.  An empty list is never returned.
+        """
         ...
 
     def get_highest_price(self) -> Optional[float]:

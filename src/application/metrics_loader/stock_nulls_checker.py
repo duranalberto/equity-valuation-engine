@@ -3,18 +3,12 @@ from domain.metrics.stock import StockMetrics
 
 
 def evaluate_nulls(stock: StockMetrics) -> None:
-    """
-    Logs informative explanations for null or missing values in StockMetrics.
-
-    Now that Ratios fields default to None instead of 0.0 (fix 5.2), these
-    checks correctly distinguish "not computed" from "computed as zero".
-    """
-    f = stock.financials
+    f  = stock.financials
     cf = stock.cash_flow
     bs = stock.balance_sheet
     md = stock.market_data
     val = stock.valuation
-    r = stock.ratios
+    r  = stock.ratios
 
     print("--- Financials & Growth Checks ---")
     if f.revenue_ttm_prev is None:

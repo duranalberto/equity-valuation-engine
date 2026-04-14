@@ -6,9 +6,6 @@ exactly as before.  Internally it now delegates to:
 
     YfinanceFetcher  →  RawTickerData  →  YfinanceParser
 
-This façade exists solely for backward compatibility.  New code that wants
-to inject test fixtures should use ``YfinanceParser(fixture_raw)`` directly.
-
 Typical usage::
 
     loader = YfinanceDataLoader("AAPL")
@@ -30,7 +27,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from infrastructure.repositories.financial_repository import (
-    BaseField, FinancialField, FinancialRepository,
+    BaseField, FinancialField, Period,
 )
 from infrastructure.mappers.stock_metrics_mapper import BaseStockMetricsMapper
 
@@ -74,6 +71,13 @@ class YfinanceDataLoader:
 
     def get_latest_numeric(self, field: FinancialField) -> Optional[float]:
         return self._parser.get_latest_numeric(field)
+
+    def get_series(
+        self,
+        field: FinancialField,
+        period: Optional[Period] = None,
+    ) -> Optional[List[float]]:
+        return self._parser.get_series(field, period)
 
     def get_highest_price(self) -> Optional[float]:
         return self._parser.get_highest_price()

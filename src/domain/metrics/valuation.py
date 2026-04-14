@@ -18,4 +18,3 @@ class WACC:
     cost_of_debt: float
     tax_rate: float
     wacc: float
-

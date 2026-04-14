@@ -8,14 +8,6 @@ def market_enterprise_value(
     total_debt: Optional[float],
     cash_and_equivalents: Optional[float],
 ) -> float:
-    """
-    Market-implied Enterprise Value.
-
-    Formula: EV = Market Cap + Total Debt - Cash & Equivalents
-
-    All None inputs are treated as 0.0 here because this function is used
-    in the DCF context where a numeric result is always required.
-    """
     return safe_sum(market_cap, total_debt) - (cash_and_equivalents or 0.0)
 
 
@@ -24,11 +16,6 @@ def cost_of_equity_capm(
     beta: float,
     market_risk_premium: float,
 ) -> float:
-    """
-    Cost of Equity via CAPM.
-
-    Re = Rf + β × (Rm - Rf)
-    """
     return risk_free_rate + beta * market_risk_premium
 
 
@@ -36,11 +23,6 @@ def intrinsic_value_per_share(
     enterprise_value: float,
     shares_outstanding: float,
 ) -> float:
-    """
-    Intrinsic value per share = Enterprise Value / Shares Outstanding.
-
-    Raises ValueError when shares_outstanding is zero or negative.
-    """
     if shares_outstanding <= 0:
         raise ValueError(
             "Shares outstanding must be positive for per-share calculation."
@@ -53,15 +35,8 @@ def _discount_to_present(
     discount_rate: float,
     periods: int,
 ) -> float:
-    """
-    PV = FV / (1 + r)^n
-
-    Raises ValueError when periods <= 0.
-    """
     if periods <= 0:
         raise ValueError("Periods must be greater than 0 for discounting.")
-    # safe_div returns Optional[float]; denominator is never None/zero here,
-    # so the `or 0.0` fallback is unreachable — kept for type-checker safety.
     result = safe_div(future_value, (1.0 + discount_rate) ** periods)
     return result if result is not None else 0.0
 
@@ -71,13 +46,6 @@ def _terminal_value_gordon(
     discount_rate: float,
     terminal_growth_rate: float,
 ) -> float:
-    """
-    Terminal value via Gordon Growth Model.
-
-    TV = FCF_avg × (1 + g) / (r - g)
-
-    Raises ValueError when r <= g or the FCF list is empty.
-    """
     if discount_rate <= terminal_growth_rate:
         raise ValueError(
             "Discount rate must be strictly greater than terminal growth rate."
@@ -95,12 +63,6 @@ def market_implied_wacc(
     terminal_growth_rate: float,
     fcf_projections: List[float],
 ) -> float:
-    """
-    Reverse-engineer the WACC implied by the current market EV via binary search.
-
-    Returns implied WACC rounded to 6 decimal places.
-    Raises ValueError when target EV is non-positive or projections list is empty.
-    """
     if target_enterprise_value <= 0 or not fcf_projections:
         raise ValueError(
             "Valid positive enterprise value and FCF projections are required."
@@ -147,15 +109,12 @@ def compute_discounted_cash_flow(
     discount_rate: float,
     terminal_growth_rate: float,
 ) -> DiscountedCashFlow:
-    """
-    Full DCF computation: discounted FCFs + terminal value → enterprise value.
-    """
     if discount_rate <= 0:
         raise ValueError("Discount rate must be positive.")
     if not fcf_projections:
         raise ValueError("At least one FCF projection is required.")
 
-    pv_fcfs = _present_value_of_fcfs(fcf_projections, discount_rate)
+    pv_fcfs       = _present_value_of_fcfs(fcf_projections, discount_rate)
     pv_fcfs_total = safe_sum(*pv_fcfs)
     terminal_value = _terminal_value_gordon(
         fcf_projections, discount_rate, terminal_growth_rate
@@ -173,7 +132,6 @@ def compute_discounted_cash_flow(
 
 
 def _equity_weight(market_cap: Optional[float], total_value: float) -> float:
-    # safe_div returns Optional; total_value is always positive here.
     result = safe_div(float(market_cap or 0.0), total_value)
     return result if result is not None else 0.0
 
@@ -190,7 +148,6 @@ def _waac(
     cost_of_debt: float,
     tax_rate: float,
 ) -> float:
-    """WACC = (E/V)·Re + (D/V)·Rd·(1 - Tc)"""
     return equity_weight * cost_of_equity + debt_weight * cost_of_debt * (1.0 - tax_rate)
 
 
@@ -201,21 +158,16 @@ def compute_wacc(
     cost_of_debt: Optional[float],
     tax_rate: Optional[float],
 ) -> WACC:
-    """
-    Compute WACC with all intermediate values.
-
-    Raises ValueError when total firm value is zero or negative.
-    """
-    equity = float(market_cap or 0)
-    debt = float(total_debt or 0)
+    equity      = float(market_cap or 0)
+    debt        = float(total_debt or 0)
     total_value = equity + debt
     if total_value <= 0:
         raise ValueError("Total firm value (equity + debt) must be positive.")
 
     _cost_of_debt = float(cost_of_debt or 0)
-    _tax_rate = float(tax_rate or 0)
-    eq_w = _equity_weight(market_cap, total_value)
-    de_w = _debt_weight(total_debt, total_value)
+    _tax_rate     = float(tax_rate or 0)
+    eq_w   = _equity_weight(market_cap, total_value)
+    de_w   = _debt_weight(total_debt, total_value)
     wacc_value = _waac(eq_w, cost_of_equity, de_w, _cost_of_debt, _tax_rate)
 
     return WACC(

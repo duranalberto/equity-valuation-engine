@@ -18,7 +18,6 @@ class ValuationResult:
     growth_rates: List[float]
     valuation_status: str
 
-
 @dataclass
 class ValuationReport:
     scenarios: Dict[str, ValuationResult]

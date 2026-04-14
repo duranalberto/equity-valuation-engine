@@ -26,7 +26,7 @@ def print_tabulated_metrics(stock: StockMetrics):
         ["Country", profile.country or "-"],
         ["Exchange", profile.exchange or "-"],
         ["Current Price", fmt_num(md.current_price)],
-        ["Shares Outstanding", fmt_num(md.shares_outstanding)], 
+        ["Shares Outstanding", fmt_num(md.shares_outstanding)],
         ["Market Cap", fmt_num(md.market_cap)],
         ["Beta (5Y Monthly)", fmt_num(md.beta)],
     ], headers=["Metric", "Value"], tablefmt="fancy_grid"))
@@ -42,14 +42,13 @@ def print_tabulated_metrics(stock: StockMetrics):
         ["Median Historical P/E", fmt_num(val.median_historical_pe)],
         ["Forward Growth Rate", fmt_pct(val.forward_growth_rate)],
     ], headers=["Metric", "Value"], tablefmt="fancy_grid"))
-    
+
     print("\n-- Enterprise Value Multiples --")
     print(tabulate([
         ["EV / Revenue (TTM)", fmt_num(val.enterprise_value / fin.revenue_ttm)],
         ["EV / EBIT", fmt_num(ratios.ev_ebit)],
         ["EV / EBITDA", fmt_num(ratios.ev_ebitda)],
     ], headers=["Metric", "Value"], tablefmt="fancy_grid"))
-
 
     print("\n-- Free Cash Flow & Shareholders --")
     print(tabulate([

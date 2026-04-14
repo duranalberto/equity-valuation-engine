@@ -1,21 +1,3 @@
-"""
-DataFrame utility functions for extracting financial data from yfinance output.
-
-Fix 2   ``get_ordered_numeric_series`` now accepts an ``already_normalized``
-        flag (default ``True`` since ``YfinanceDataLoader`` pre-normalizes all
-        DataFrames at construction time).  Passing ``already_normalized=True``
-        skips the ``normalize_df_index`` call, removing the 20+ redundant
-        normalizations that previously happened on every field access.
-
-        The flag defaults to ``True`` to match the new loader behaviour.
-        Pass ``False`` when calling from code that has NOT pre-normalized.
-
-Design 8  ``calculate_ttm_from_series`` now validates that the four selected
-        quarters span approximately 9–12 months (i.e. they are not duplicates
-        or large gaps caused by restated data).  A warning is logged and None
-        returned when the date span is out of range, rather than silently
-        summing mismatched quarters.
-"""
 from __future__ import annotations
 
 import logging
@@ -28,16 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_label(label: Any) -> str:
-    """Normalise arbitrary strings into stable match keys."""
     s = re.sub(r"[^a-zA-Z0-9]+", "_", str(label).lower())
     return re.sub(r"_+", "_", s).strip("_")
 
 
 def normalize_df_index(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Return a copy of ``df`` with its index normalised via ``normalize_label``.
-    Does not mutate ``df`` in place.
-    """
     if df is None or df.empty:
         return df
     new_df = df.copy()
@@ -51,7 +28,6 @@ def normalize_df_index(df: pd.DataFrame) -> pd.DataFrame:
 def _find_matching_index(
     df: pd.DataFrame, normalized_candidates: Iterable[str]
 ) -> Optional[str]:
-    """Strict match: normalized_candidate == normalized_df_index_label."""
     if df is None or df.empty:
         return None
     index_norm_map = {normalize_label(idx): idx for idx in df.index}
@@ -65,7 +41,6 @@ def _find_matching_index(
 def _find_matching_column(
     df: pd.DataFrame, normalized_candidates: Iterable[str]
 ) -> Optional[str]:
-    """Strict match: normalized_candidate == normalized_df_column_label."""
     if df is None or df.empty:
         return None
     col_norm_map = {normalize_label(c): c for c in df.columns}
@@ -118,7 +93,6 @@ def extract_from_dataframe(
     from_index: bool = False,
     as_list: bool = False,
 ) -> Optional[Union[pd.Series, list]]:
-    """Strict deterministic extractor for a row or column."""
     if df is None or df.empty:
         return None
     df_norm = normalize_df_index(df)
@@ -198,36 +172,10 @@ def get_ordered_numeric_series(
     labels: Union[List[str], str],
     already_normalized: bool = True,
 ) -> Optional[pd.Series]:
-    """
-    Find a row by label and return its numeric values ordered by date (descending).
-
-    Fix 2: ``already_normalized`` defaults to ``True`` because
-    ``YfinanceDataLoader`` pre-normalizes all DataFrames at construction.
-    When ``True`` the ``normalize_df_index`` call is skipped entirely, removing
-    the per-call overhead that was previously multiplied across every field lookup.
-
-    Pass ``already_normalized=False`` from any code path that has not
-    pre-normalized the DataFrame.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The financial statement DataFrame.
-    labels : str | List[str]
-        Row label candidates (tried in order).
-    already_normalized : bool
-        When True (default), assume the index is already normalized and skip
-        the ``normalize_df_index`` step.
-
-    Returns
-    -------
-    pd.Series of numeric values ordered descending by date, or None.
-    """
     if df is None or df.empty:
         return None
 
     label_list = [labels] if isinstance(labels, str) else labels
-
     working_df = df if already_normalized else normalize_df_index(df)
 
     idx = _find_row_index(working_df, label_list)
@@ -243,60 +191,33 @@ def get_ordered_numeric_series(
     return numeric if not numeric.empty else None
 
 
-_TTM_MIN_DAYS = 270   # ~9 months  — below this, quarters are too close together
-_TTM_MAX_DAYS = 400   # ~13 months — above this, there may be a gap or restatement
+_TTM_MIN_DAYS = 270
+_TTM_MAX_DAYS = 400
 
 
 def calculate_ttm_from_series(
     series: pd.Series,
     year_offset: int,
 ) -> Optional[float]:
-    """
-    Sum the four quarters that make up TTM at the requested offset.
-
-    The series must be ordered descending by date (most recent first).
-
-    Fix 2 / Design 8: After selecting the four quarters, we attempt to parse
-    the column labels as dates.  When they are parseable, we validate that the
-    span from the oldest to the newest selected quarter is between
-    ``_TTM_MIN_DAYS`` (~9 months) and ``_TTM_MAX_DAYS`` (~13 months).  If the
-    span is outside this range, a warning is logged and None is returned rather
-    than silently summing mismatched or gapped data.
-
-    When column labels are not parseable as dates (e.g. integer indices), the
-    span check is skipped and behaviour is identical to before.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Quarterly numeric values, ordered descending (most recent first).
-    year_offset : int
-        0 = latest TTM, 1 = previous TTM (one year prior), etc.
-
-    Returns
-    -------
-    float (TTM sum) or None when insufficient or suspect data.
-    """
     needed = (year_offset + 1) * 4
     if len(series) < needed:
         return None
 
     start = year_offset * 4
-    end = start + 4
+    end   = start + 4
     window = series.iloc[start:end]
 
     if len(window) < 4 or window.isna().any():
         return None
 
     try:
-        dates = pd.to_datetime(window.index, errors="raise")
+        dates     = pd.to_datetime(window.index, errors="raise")
         span_days = int((dates.max() - dates.min()).days)
 
         if span_days < _TTM_MIN_DAYS or span_days > _TTM_MAX_DAYS:
             logger.warning(
                 "TTM date span of %d days (offset=%d) is outside the expected "
-                "range [%d, %d]. The four selected quarters may not represent a "
-                "full year. Returning None to avoid summing inconsistent data.",
+                "range [%d, %d]. Returning None.",
                 span_days, year_offset, _TTM_MIN_DAYS, _TTM_MAX_DAYS,
             )
             return None

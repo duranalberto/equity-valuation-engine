@@ -1,38 +1,27 @@
-"""
-MetricsLoader — bridges the FinancialRepository and the domain model.
-
-Changes from the original
---------------------------
-1. ``loader_cls`` is validated as a ``FinancialRepository`` at construction
-   time via ``isinstance`` (now possible because the protocol is
-   ``@runtime_checkable``).
-
-2. ``_build_valuation`` no longer calls phantom mapper keys
-   (``cost_of_debt`` / ``corporate_tax_rate``) that the yfinance info dict
-   never contains.  Those values are now derived inside ``Valuation.build``
-   from statement data.  ``_build_valuation`` only passes the
-   loader-specific seed that the domain cannot derive itself:
-   ``highest_price``.
-
-3. ``ValuationMapper`` entries for ``cost_of_debt`` and
-   ``corporate_tax_rate`` are dead code and documented as such — they remain
-   in the mapper for now so the mapper's field coverage validation still
-   passes, but they are not used by this loader.
-"""
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional, Type, Union
+from typing import Optional, Type, Union, List
 
 import domain.metrics.stock as sm
+from domain.metrics.history import FinancialsHistory, CashFlowHistory, BalanceSheetHistory
 from infrastructure.repositories.financial_repository import (
     Action, BaseField, EnumField,
-    FinancialField, LabelField, FinancialRepository,
+    FinancialField, LabelField, FinancialRepository, Period,
 )
 from infrastructure.repositories import YfinanceDataLoader
+from infrastructure.repositories.yfinance.mappers import (
+    FinancialsHistoryMapper,
+    CashFlowHistoryMapper,
+    BalanceSheetHistoryMapper,
+    YfSeriesField,
+)
+from infrastructure.mappers.base_mapper import GenericMapper
 
 
 class MetricsLoader:
+    HISTORY_MAPPERS: dict = {}
+
     def __init__(
         self,
         ticker_symbol: str,
@@ -44,8 +33,8 @@ class MetricsLoader:
                 f"{loader_cls.__name__} does not implement the "
                 "FinancialRepository protocol.  Ensure it defines: "
                 "get_label, get_ttm_from_quarters, get_annual_value, "
-                "get_latest_numeric, get_highest_price, get_price_history, "
-                "get_eps_history, get_eps_data_quality."
+                "get_latest_numeric, get_series, get_highest_price, "
+                "get_price_history, get_eps_history, get_eps_data_quality."
             )
 
         self.loader: FinancialRepository = loader_instance
@@ -69,9 +58,27 @@ class MetricsLoader:
             return prev_ttm
         return self.loader.get_annual_value(field, year_offset=1)
 
+    def get_series_value(
+        self,
+        field: FinancialField,
+        period: Optional[Period] = None,
+    ) -> Optional[List[float]]:
+        """
+        Return the full ordered historical series for a statement row.
+
+        ``period`` overrides the period declared on the field descriptor.
+        When both are ``None`` the loader defaults to QUARTERLY.
+        """
+        if field is None:
+            return None
+        return self.loader.get_series(field, period)
+
     def get_from_field(
         self, field: BaseField
-    ) -> Optional[Union[float, str, Enum]]:
+    ) -> Optional[Union[float, str, Enum, List[float]]]:
+        """
+        Dispatch to the correct loader method based on field type and action.
+        """
         if isinstance(field, FinancialField):
             match field.action:
                 case Action.GET_LATEST_VALUE:
@@ -80,6 +87,8 @@ class MetricsLoader:
                     return self.get_ttm_value(field)
                 case Action.GET_TTM_PREV_VALUE:
                     return self.get_ttm_prev_value(field)
+                case Action.GET_SERIES:
+                    return self.get_series_value(field)
 
         if isinstance(field, (LabelField, EnumField)):
             return self.loader.get_label(field)
@@ -90,17 +99,8 @@ class MetricsLoader:
         """
         Construct a seed ``Valuation`` for the loader-specific fields.
 
-        Only ``highest_price`` is passed here — the value that the domain
-        cannot derive from statement data alone.  ``cost_of_debt`` and
-        ``corporate_tax_rate`` are intentionally omitted; ``Valuation.build``
-        derives them from ``financials.interest_expense_ttm`` /
-        ``balance_sheet.total_debt`` and ``financials.tax_expense_ttm`` /
-        ``financials.ebt_ttm`` respectively.
-
-        The ``ValuationMapper`` still declares ``cost_of_debt`` and
-        ``corporate_tax_rate`` entries (pointing at yfinance info keys that
-        don't exist) to satisfy the mapper's field-coverage validation.
-        Those resolved values are deliberately ignored here.
+        Only ``highest_price`` is passed here.  ``cost_of_debt`` and
+        ``corporate_tax_rate`` are derived inside ``Valuation.build``.
         """
         return sm.Valuation(
             highest_price=self.loader.get_highest_price(),
@@ -120,8 +120,58 @@ class MetricsLoader:
             eps_history=self.loader.get_eps_history(),
         )
 
+    def build_model(self, model_cls: type) -> object:
+        mapper = self.mapper[model_cls]
+        kwargs = {}
+        for field_name, field_def in mapper.items():
+            if isinstance(field_def, BaseField):
+                kwargs[field_name] = self.get_from_field(field_def)
+            else:
+                kwargs[field_name] = None
+        return mapper.target_type(**kwargs)
+
+    def _build_history_model(self, mapper: GenericMapper) -> object:
+        """
+        Generic history model builder.
+
+        Iterates the mapper and calls ``get_series_value()`` for every
+        ``YfSeriesField`` it encounters.  Non-series fields (e.g. derived
+        fields with ``init=False``) are skipped — they are never present in
+        the mapper by design.
+        """
+        kwargs = {}
+        for field_name, field_def in mapper.items():
+            if isinstance(field_def, YfSeriesField):
+                kwargs[field_name] = self.get_series_value(field_def)
+            elif isinstance(field_def, BaseField):
+                kwargs[field_name] = self.get_from_field(field_def)
+            else:
+                kwargs[field_name] = None
+        return mapper.target_type(**kwargs)
+
+    def _build_financials_history(self) -> FinancialsHistory:
+        return self._build_history_model(FinancialsHistoryMapper()) 
+
+    def _build_cashflow_history(self) -> CashFlowHistory:
+        return self._build_history_model(CashFlowHistoryMapper())
+
+    def _build_balance_sheet_history(self) -> BalanceSheetHistory:
+        return self._build_history_model(BalanceSheetHistoryMapper())
+
     def build_stock_metrics(self) -> sm.StockMetrics:
-        return sm.StockMetrics(
+        """
+        Build the full ``StockMetrics`` aggregate.
+
+        Construction order
+        ------------------
+        1. Build all primary scalar sub-models (profile, financials, …).
+        2. Construct ``StockMetrics`` — ``__post_init__`` runs
+           ``Valuation.build`` and ``Ratios.build`` using scalar data only.
+        3. Build history companions and attach them to their sub-models.
+        4. Call ``stock._rebuild_derived()`` so ``Valuation`` and ``Ratios``
+           are re-computed with the richer history data.
+        """
+        stock = sm.StockMetrics(
             profile=self.build_model(sm.CompanyProfile),
             financials=self.build_model(sm.Financials),
             cash_flow=self.build_model(sm.CashFlow),
@@ -132,12 +182,10 @@ class MetricsLoader:
             historical_data=self._build_historical_data(),
         )
 
-    def build_model(self, model_cls: type) -> object:
-        mapper = self.mapper[model_cls]
-        kwargs = {}
-        for field_name, field_def in mapper.items():
-            if isinstance(field_def, BaseField):
-                kwargs[field_name] = self.get_from_field(field_def)
-            else:
-                kwargs[field_name] = None
-        return mapper.target_type(**kwargs)
+        stock.financials.history   = self._build_financials_history()
+        stock.cash_flow.history    = self._build_cashflow_history()
+        stock.balance_sheet.history = self._build_balance_sheet_history()
+
+        stock._rebuild_derived()
+
+        return stock

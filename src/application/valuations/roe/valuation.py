@@ -35,9 +35,7 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
     year_n_income = sm.ratios.return_on_equity * equity_per_share_progression[-1]
     required_value = year_n_income / pm.discount_rate
     npv_required_value = required_value / ((1 + pm.discount_rate) ** pm.projection_years)
-
     npv_dividends = sum(npv_dividend_progression)
-
     intrinsic_value = npv_required_value + npv_dividends
 
     valuation_status = evaluate_price(
@@ -75,9 +73,7 @@ def execute_roe_scenarios(
     dividend_rate_per_share = raw_dividends / stock_metrics.market_data.shares_outstanding
 
     growth_scenarios = generate_growth_scenarios(
-        stock_metrics,
-        params.projection_years,
-        params.margin_of_safety,
+        stock_metrics, params.projection_years, params.margin_of_safety,
     )
 
     scenarios: Dict[str, ROEValuationResult] = {}
@@ -90,7 +86,4 @@ def execute_roe_scenarios(
         )
         scenarios[name] = roe_valuation(roe_input)
 
-    return ROEValuationReport(
-        scenarios=scenarios,
-        params=params,
-    )
+    return ROEValuationReport(scenarios=scenarios, params=params)

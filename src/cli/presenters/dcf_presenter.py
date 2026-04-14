@@ -5,11 +5,7 @@ from .utils import fmt_num, fmt_pct, colors
 from typing import List
 
 
-def build_summary_metrics_table(
-    current_price: float,
-    pe_ratio: float,
-    report: DCFValuationReport,
-) -> List[List[str]]:
+def build_summary_metrics_table(current_price, pe_ratio, report):
     return [
         ["Current Stock Price", fmt_num(current_price)],
         ["P/E Ratio", fmt_num(pe_ratio)],
@@ -18,19 +14,16 @@ def build_summary_metrics_table(
     ]
 
 
-def build_scenario_summary_table(report: DCFValuationReport) -> List[List[str]]:
+def build_scenario_summary_table(report):
     summary_table = []
     for scenario_name, r in report.scenarios.items():
-        r: DCFValuationResult = r
         status = r.valuation_status
-
         if "undervalued" in status:
             status_colored = f"{colors.GREEN.value}{status}{colors.RESET.value}"
         elif "overvalued" in status:
             status_colored = f"{colors.RED.value}{status}{colors.RESET.value}"
         else:
             status_colored = status
-
         summary_table.append([
             scenario_name,
             fmt_num(r.dcf.enterprise_value / 1e9) + " B",
@@ -44,33 +37,27 @@ def build_scenario_summary_table(report: DCFValuationReport) -> List[List[str]]:
     return summary_table
 
 
-def build_growth_rate_table(report: DCFValuationReport) -> List[List[str]]:
+def build_growth_rate_table(report):
     return [
         [scenario_name] + [fmt_pct(g) for g in r.growth_rates]
         for scenario_name, r in report.scenarios.items()
     ]
 
 
-def _build_projection_table(
-    report: DCFValuationReport,
-    get_values,
-) -> List[List[str]]:
+def _build_projection_table(report, get_values):
     data_table = []
     for scenario_name, r in report.scenarios.items():
-        r: DCFValuationResult = r
         proj = get_values(r)
         total_growth = (proj[-1] / proj[0] - 1) if proj and proj[0] != 0 else None
-        data_table.append(
-            [scenario_name] + [fmt_num(v) for v in proj] + [fmt_pct(total_growth)]
-        )
+        data_table.append([scenario_name] + [fmt_num(v) for v in proj] + [fmt_pct(total_growth)])
     return data_table
 
 
-def build_fcf_projection_table(report: DCFValuationReport) -> List[List[str]]:
+def build_fcf_projection_table(report):
     return _build_projection_table(report, lambda r: r.fcf_projections)
 
 
-def build_pv_fcf_table(report: DCFValuationReport) -> List[List[str]]:
+def build_pv_fcf_table(report):
     return _build_projection_table(report, lambda r: r.dcf.pv_fcfs)
 
 
@@ -95,8 +82,7 @@ def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> No
         "Scenario", "Enterprise Value", "Intrinsic Value/Share",
         "Total PV FCFs", "Terminal Value", "PV Terminal Value", "Implied WACC", "Status",
     ]
-    summary_table = build_scenario_summary_table(report)
-    print(tabulate(summary_table, headers=summary_headers, tablefmt="fancy_grid"))
+    print(tabulate(build_scenario_summary_table(report), headers=summary_headers, tablefmt="fancy_grid"))
 
     print("\n-- Growth Rate Comparison by Scenario --")
     num_growth_years = len(first_result.growth_rates)

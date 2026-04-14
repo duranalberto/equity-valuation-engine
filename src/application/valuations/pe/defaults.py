@@ -31,12 +31,8 @@ PE_DISCOUNT_RATE = {
 }
 
 
-def get_params(
-    stock_metrics: StockMetrics,
-    projection_years: int = 10,
-) -> PEParameters:
+def get_params(stock_metrics: StockMetrics, projection_years: int = 10) -> PEParameters:
     sector: Sectors = stock_metrics.profile.sector
-
     return PEParameters(
         margin_of_safety=PE_MARGIN_OF_SAFETY.get(sector, 0.25),
         discount_rate=PE_DISCOUNT_RATE.get(sector, 0.09),

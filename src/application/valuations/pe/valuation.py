@@ -42,9 +42,7 @@ def execute_pe_scenarios(
         params = get_params(stock_metrics)
 
     growth_scenarios = generate_growth_scenarios(
-        stock_metrics,
-        params.projection_years,
-        params.margin_of_safety,
+        stock_metrics, params.projection_years, params.margin_of_safety,
     )
 
     scenarios: Dict[str, PEValuationResult] = {}
@@ -56,7 +54,4 @@ def execute_pe_scenarios(
         )
         scenarios[name] = pe_valuation(pe_input)
 
-    return PEValuationReport(
-        scenarios=scenarios,
-        params=params,
-    )
+    return PEValuationReport(scenarios=scenarios, params=params)

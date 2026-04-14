@@ -1,5 +1,3 @@
 from .handler import DCFManager
 
-__all__ = [
-    DCFManager
-]
+__all__ = [DCFManager]

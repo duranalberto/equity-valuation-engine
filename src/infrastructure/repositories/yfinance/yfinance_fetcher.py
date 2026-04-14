@@ -1,19 +1,3 @@
-"""
-YfinanceFetcher — the network I/O half of the old YfinanceDataLoader.
-
-Responsibilities
-----------------
-* Call ``yf.Ticker`` exactly once.
-* Collect every raw DataFrame and the info dict into a ``RawTickerData``.
-* Apply no transformation, normalisation, or business logic.
-
-Testing
--------
-This class is the only place that should ever be mocked/recorded at the
-HTTP level (e.g. with ``vcrpy`` or ``responses``).  A single cassette per
-ticker is enough to cover every parser test because the fetcher is the
-only network consumer.
-"""
 from __future__ import annotations
 
 import logging
@@ -29,17 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class YfinanceFetcher:
-    """
-    Fetch raw data for a single ticker from Yahoo Finance.
-
-    Usage::
-
-        raw = YfinanceFetcher("AAPL").fetch()
-        # raw is a RawTickerData — hand it to YfinanceParser
-
-    The fetcher is intentionally stateless after ``fetch()`` returns.
-    Nothing is cached here; caching is the caller's responsibility.
-    """
 
     def __init__(self, ticker_symbol: str) -> None:
         if not ticker_symbol or not ticker_symbol.strip():
@@ -47,21 +20,14 @@ class YfinanceFetcher:
         self._symbol = ticker_symbol.strip().upper()
 
     def fetch(self) -> RawTickerData:
-        """
-        Call Yahoo Finance and return a ``RawTickerData``.
-
-        Never raises — network errors are caught and logged; the returned
-        object will have empty DataFrames and/or an empty info dict so the
-        parser can handle the degraded case gracefully.
-        """
         logger.info("Fetching yfinance data for %s", self._symbol)
         ticker = yf.Ticker(self._symbol)
 
-        info = self._safe_info(ticker)
-        annual = self._fetch_annual(ticker)
+        info      = self._safe_info(ticker)
+        annual    = self._fetch_annual(ticker)
         quarterly = self._fetch_quarterly(ticker)
         earnings_raw = self._safe_earnings_history(ticker)
-        price_raw = self._safe_price_history(ticker)
+        price_raw    = self._safe_price_history(ticker)
 
         return RawTickerData(
             ticker_symbol=self._symbol,
@@ -86,21 +52,19 @@ class YfinanceFetcher:
 
     def _fetch_annual(self, ticker: yf.Ticker) -> Dict[str, pd.DataFrame]:
         return {
-            "income": self._safe_df(ticker, "financials"),
-            "cashflow": self._safe_df(ticker, "cashflow"),
+            "income":        self._safe_df(ticker, "financials"),
+            "cashflow":      self._safe_df(ticker, "cashflow"),
             "balance_sheet": self._safe_df(ticker, "balance_sheet"),
         }
 
     def _fetch_quarterly(self, ticker: yf.Ticker) -> Dict[str, pd.DataFrame]:
         return {
-            "income": self._safe_df(ticker, "quarterly_financials"),
-            "cashflow": self._safe_df(ticker, "quarterly_cashflow"),
+            "income":        self._safe_df(ticker, "quarterly_financials"),
+            "cashflow":      self._safe_df(ticker, "quarterly_cashflow"),
             "balance_sheet": self._safe_df(ticker, "quarterly_balance_sheet"),
         }
 
-    def _safe_earnings_history(
-        self, ticker: yf.Ticker
-    ) -> Optional[pd.DataFrame]:
+    def _safe_earnings_history(self, ticker: yf.Ticker) -> Optional[pd.DataFrame]:
         try:
             raw = getattr(ticker, "earnings_history", None)
             if raw is None:
@@ -113,28 +77,21 @@ class YfinanceFetcher:
                 return None
             return df if not df.empty else None
         except Exception as exc:
-            logger.warning(
-                "Could not fetch earnings_history for %s: %s", self._symbol, exc
-            )
+            logger.warning("Could not fetch earnings_history for %s: %s", self._symbol, exc)
             return None
 
-    def _safe_price_history(
-        self, ticker: yf.Ticker
-    ) -> Optional[pd.DataFrame]:
+    def _safe_price_history(self, ticker: yf.Ticker) -> Optional[pd.DataFrame]:
         try:
             df = ticker.history(period="max", interval="1mo")
             if isinstance(df, pd.DataFrame) and not df.empty:
                 return df
             return None
         except Exception as exc:
-            logger.warning(
-                "Could not fetch price history for %s: %s", self._symbol, exc
-            )
+            logger.warning("Could not fetch price history for %s: %s", self._symbol, exc)
             return None
 
     @staticmethod
     def _safe_df(ticker: yf.Ticker, attr: str) -> pd.DataFrame:
-        """Return the attribute as a DataFrame, or an empty DataFrame on error."""
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -145,7 +102,5 @@ class YfinanceFetcher:
                 return value
             return pd.DataFrame(value)
         except Exception as exc:
-            logger.warning(
-                "Could not fetch %s.%s: %s", ticker.ticker, attr, exc
-            )
+            logger.warning("Could not fetch %s.%s: %s", ticker.ticker, attr, exc)
             return pd.DataFrame()

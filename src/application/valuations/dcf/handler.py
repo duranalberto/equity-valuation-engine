@@ -29,7 +29,6 @@ class DCFManager(ValuationManager):
         params: Optional[ValuationParams] = None,
     ) -> None:
         self.stock_metrics = stock_metrics
-
         if params is None:
             self.params = get_params(stock_metrics, projection_years)
         else:

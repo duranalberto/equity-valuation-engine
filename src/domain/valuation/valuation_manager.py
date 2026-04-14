@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from typing import Optional
 from .base import ValuationParams, ValuationReport, ValuationInput, ValuationResult
@@ -8,7 +7,7 @@ from ..metrics.stock import StockMetrics
 class ValuationManager(ABC):
     report: Optional[ValuationReport] = None
     stock_metrics: StockMetrics
-    
+
     @abstractmethod
     def __init__(
         self,
@@ -16,9 +15,6 @@ class ValuationManager(ABC):
         projection_years: int = 10,
         params: Optional[ValuationParams] = None
     ) -> None:
-        """
-        Initializes the manager. Must be implemented by subclasses.
-        """
         pass
 
     @abstractmethod

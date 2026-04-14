@@ -7,15 +7,6 @@ def enterprise_value(
     total_debt: Optional[float],
     cash: Optional[float],
 ) -> Optional[float]:
-    """
-    Calculate Enterprise Value (EV).
-
-    Formula:
-        EV = Market Cap + Total Debt - Cash & Equivalents
-
-    Returns None only when market_cap is None, because EV without a
-    market-cap anchor is meaningless. Missing debt/cash are treated as 0.
-    """
     if market_cap is None:
         return None
     return safe_sum(market_cap, total_debt) - (cash or 0.0)
@@ -25,11 +16,6 @@ def interest_coverage(
     ebit_ttm: Optional[float],
     interest_exp_ttm: Optional[float],
 ) -> Optional[float]:
-    """
-    Interest Coverage = EBIT / |Interest Expense|
-
-    Returns None when either input is None or interest expense is zero.
-    """
     if interest_exp_ttm is None or interest_exp_ttm == 0:
         return None
     return safe_div(ebit_ttm, abs(interest_exp_ttm))
@@ -40,12 +26,6 @@ def quick_ratio(
     inventory: Optional[float],
     current_liabilities: Optional[float],
 ) -> Optional[float]:
-    """
-    Quick Ratio = (Current Assets - Inventory) / Current Liabilities
-
-    Returns None when current_assets or current_liabilities is None.
-    Missing inventory is treated as 0 (conservative: full assets available).
-    """
     if current_assets is None or current_liabilities is None:
         return None
     numerator = current_assets - (inventory or 0.0)
@@ -57,11 +37,6 @@ def dividend_yield(
     shares_outstanding: Optional[float],
     current_price: Optional[float],
 ) -> Optional[float]:
-    """
-    Dividend Yield = (|Dividends Paid| / Shares Outstanding) / Current Price
-
-    Returns None when any input is None or zero-denominator.
-    """
     dps = safe_div(abs(dividends_paid_ttm or 0.0), shares_outstanding)
     if dps is None:
         return None
@@ -72,11 +47,6 @@ def payout_ratio(
     dividends_paid_ttm: Optional[float],
     net_income_ttm: Optional[float],
 ) -> Optional[float]:
-    """
-    Payout Ratio = |Total Dividends| / Net Income
-
-    Returns None when net_income is None or zero.
-    """
     return safe_div(abs(dividends_paid_ttm or 0.0), net_income_ttm)
 
 
@@ -85,11 +55,6 @@ def price_to_book(
     total_equity: Optional[float],
     shares_outstanding: Optional[Union[float, int]],
 ) -> Optional[float]:
-    """
-    P/B = Price / (Total Equity / Shares Outstanding)
-
-    Returns None when any input is None or zero-denominator.
-    """
     if price is None or total_equity is None or shares_outstanding is None:
         return None
     book_value_per_share = safe_div(total_equity, float(shares_outstanding))
@@ -97,14 +62,6 @@ def price_to_book(
 
 
 def cagr_from_series(values: List[float]) -> Optional[float]:
-    """
-    Compound Annual Growth Rate from a sequence of values.
-
-    Formula:
-        CAGR = (end / start) ** (1 / n) - 1
-
-    Returns None when data is insufficient or start/end are non-positive.
-    """
     if not values or len(values) < 2:
         return None
     start, end = values[0], values[-1]
@@ -120,12 +77,6 @@ def median_pe_ratio(
     prices: List[float],
     eps_values: List[float],
 ) -> Optional[float]:
-    """
-    Median historical P/E ratio from price and EPS series.
-
-    Handles differing list lengths by truncating to the shorter list.
-    Returns None when no valid (positive EPS) pairs exist.
-    """
     if not prices or not eps_values:
         return None
     min_len = min(len(prices), len(eps_values))
@@ -146,13 +97,6 @@ def calculate_growth(
     current_value: Optional[float],
     previous_value: Optional[float],
 ) -> Optional[float]:
-    """
-    Period-over-period growth rate = (current / previous) - 1.
-
-    Returns None when either value is None or previous is zero.
-    Explicit None return (not 0.0) so callers can distinguish
-    "zero growth" from "growth could not be calculated".
-    """
     result = safe_div(current_value, previous_value)
     if result is None:
         return None
@@ -166,15 +110,6 @@ def roic(
     total_equity: Optional[float],
     cash_and_equivalents: Optional[float],
 ) -> Optional[float]:
-    """
-    Return on Invested Capital.
-
-    NOPAT = EBIT × (1 - Tax Rate)
-    IC    = Total Debt + Total Equity - Cash
-    ROIC  = NOPAT / IC
-
-    Returns None when EBIT is None or invested capital is zero/None.
-    """
     if ebit_ttm is None:
         return None
     invested_capital = safe_sum(total_debt, total_equity) - (cash_and_equivalents or 0.0)

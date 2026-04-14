@@ -77,31 +77,32 @@ class YfinanceParser:
         self._raw = raw
         self.mapper = StockMetricsMapper()
 
-        fin_currency = raw.info.get(FINANCIAL_CURRENCY_LABEL)
+        fin_currency   = raw.info.get(FINANCIAL_CURRENCY_LABEL)
         trade_currency = raw.info.get(TRADING_CURRENCY_LABEL)
         self._financial_rate: float = get_rate_to_usd(fin_currency)
-        self._trading_rate: float = get_rate_to_usd(trade_currency)
+        self._trading_rate:   float = get_rate_to_usd(trade_currency)
 
         self._financials: Dict[Period, Dict[Statement, pd.DataFrame]] = {
             Period.ANNUAL: {
-                Statement.INCOME: self._norm(raw.annual_income),
-                Statement.CASHFLOW: self._norm(raw.annual_cashflow),
+                Statement.INCOME:        self._norm(raw.annual_income),
+                Statement.CASHFLOW:      self._norm(raw.annual_cashflow),
                 Statement.BALANCE_SHEET: self._norm(raw.annual_balance_sheet),
             },
             Period.QUARTERLY: {
-                Statement.INCOME: self._norm(raw.quarterly_income),
-                Statement.CASHFLOW: self._norm(raw.quarterly_cashflow),
+                Statement.INCOME:        self._norm(raw.quarterly_income),
+                Statement.CASHFLOW:      self._norm(raw.quarterly_cashflow),
                 Statement.BALANCE_SHEET: self._norm(raw.quarterly_balance_sheet),
             },
         }
 
-        self._earnings: EarningsHistory = self._build_earnings_history()
+        self._earnings:      EarningsHistory       = self._build_earnings_history()
         self._price_history: Optional[PriceHistory] = self._build_price_history()
 
-        self._eps_quality: DataQuality = self._earnings.quality
+        self._eps_quality: DataQuality       = self._earnings.quality
         self._eps_history: Optional[List[float]] = (
             self._earnings.eps_values or None
         )
+
 
     def get_label(self, field: BaseField) -> Optional[Any]:
         if isinstance(field, EnumField):
@@ -130,8 +131,8 @@ class YfinanceParser:
         if year_offset < 0:
             raise ValueError("year_offset cannot be negative.")
         yf_field = cast(YfFinancialField, field)
-        df = self._get_stmt(Period.QUARTERLY, yf_field.statement)
-        series = get_ordered_numeric_series(df, yf_field.label)
+        df       = self._get_stmt(Period.QUARTERLY, yf_field.statement)
+        series   = get_ordered_numeric_series(df, yf_field.label)
         if series is None:
             return None
         ttm = calculate_ttm_from_series(series, year_offset)
@@ -145,8 +146,8 @@ class YfinanceParser:
         if year_offset < 0:
             raise ValueError("year_offset cannot be negative.")
         yf_field = cast(YfFinancialField, field)
-        df = self._get_stmt(Period.ANNUAL, yf_field.statement)
-        series = get_ordered_numeric_series(df, yf_field.label)
+        df       = self._get_stmt(Period.ANNUAL, yf_field.statement)
+        series   = get_ordered_numeric_series(df, yf_field.label)
         if series is None or len(series) <= year_offset:
             return None
         return float(series.iloc[year_offset]) * self._get_rate(
@@ -155,12 +156,44 @@ class YfinanceParser:
 
     def get_latest_numeric(self, field: FinancialField) -> Optional[float]:
         yf_field = cast(YfFinancialField, field)
-        period = yf_field.period if yf_field.period is not None else Period.QUARTERLY
-        df = self._get_stmt(period, yf_field.statement)
-        series = get_ordered_numeric_series(df, yf_field.label)
+        period   = yf_field.period if yf_field.period is not None else Period.QUARTERLY
+        df       = self._get_stmt(period, yf_field.statement)
+        series   = get_ordered_numeric_series(df, yf_field.label)
         if series is None:
             return None
         return float(series.iloc[0]) * self._get_rate(cast(CurrencyField, yf_field))
+
+
+    def get_series(
+        self,
+        field: FinancialField,
+        period: Optional[Period] = None,
+    ) -> Optional[List[float]]:
+        """
+        Return all available values for a statement row as a list,
+        **oldest first**, with FX conversion applied.
+
+        Resolution order for ``period``:
+            1. The ``period`` argument (explicit override).
+            2. ``field.period`` (declared on the descriptor).
+            3. ``Period.QUARTERLY`` (default).
+
+        Returns ``None`` when the row cannot be found or produces no numeric
+        values.  An empty list is never returned.
+        """
+        yf_field       = cast(YfFinancialField, field)
+        resolved_period = period or yf_field.period or Period.QUARTERLY
+
+        df = self._get_stmt(resolved_period, yf_field.statement)
+        series = get_ordered_numeric_series(df, yf_field.label)
+        if series is None or series.empty:
+            return None
+        
+        rate       = self._get_rate(cast(CurrencyField, yf_field))
+        raw_values = series.tolist()
+        raw_values.reverse()
+        values = [float(v) * rate for v in raw_values]
+        return values if values else None
 
     def get_highest_price(self) -> Optional[float]:
         return self._price_history.highest if self._price_history else None
@@ -191,9 +224,9 @@ class YfinanceParser:
                     continue
                 field_info = {}
                 for idx in df.index:
-                    row = df.loc[idx]
+                    row     = df.loc[idx]
                     numeric = pd.to_numeric(row, errors="coerce")
-                    count = int(numeric.count())
+                    count   = int(numeric.count())
                     field_info[str(idx)] = {
                         "values_available": count,
                         "has_ttm_coverage": (
@@ -202,8 +235,8 @@ class YfinanceParser:
                     }
                 debug_info[p_key][s_key] = {
                     "available_fields": field_info,
-                    "total_fields": len(field_info),
-                    "empty": False,
+                    "total_fields":     len(field_info),
+                    "empty":            False,
                 }
         return debug_info
 
@@ -235,14 +268,10 @@ class YfinanceParser:
         --------------
         1. ``earnings_history_raw`` — direct epsActual column.
         2. EPS row in the quarterly income statement.
-        3. Net Income / Shares Outstanding (approximation, NO FX applied —
-           the series is already in the financial currency; dividing by shares
-           gives per-share values in that currency, consistent with paths 1&2).
+        3. Net Income / Shares Outstanding (approximation).
 
         Design note: EPS is a per-share ratio — it must NOT be multiplied by
-        the financial FX rate.  The original loader had an inconsistency where
-        path 3 applied ``* financial_rate`` before dividing by shares; this is
-        removed here.  All three paths return per-share values as-reported.
+        the financial FX rate.
         """
         eps_labels = [
             "diluted eps", "eps", "epsactual",
@@ -262,7 +291,7 @@ class YfinanceParser:
                     quality=DataQuality.DIRECT,
                 )
 
-        q_income = self._get_stmt(Period.QUARTERLY, Statement.INCOME)
+        q_income   = self._get_stmt(Period.QUARTERLY, Statement.INCOME)
         eps_series = get_ordered_numeric_series(q_income, eps_labels)
         if eps_series is not None and not eps_series.empty:
             logger.debug(
@@ -298,7 +327,6 @@ class YfinanceParser:
             self._raw.ticker_symbol,
         )
         return EarningsHistory(eps_values=[], quality=DataQuality.MISSING)
-
 
     def _build_price_history(self) -> Optional[PriceHistory]:
         """

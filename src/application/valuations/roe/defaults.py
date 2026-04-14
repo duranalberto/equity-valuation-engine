@@ -14,7 +14,7 @@ ROE_MARGIN_OF_SAFETY = {
     Sectors.REAL_ESTATE: 0.35,
     Sectors.TECHNOLOGY: 0.30,
     Sectors.UTILITIES: 0.15,
-}  # Fix 1.1: was missing this closing brace
+}
 
 ROE_DISCOUNT_RATE = {
     Sectors.BASIC_MATERIALS: 0.105,
@@ -31,18 +31,10 @@ ROE_DISCOUNT_RATE = {
 }
 
 
-def get_params(
-    stock_metrics: StockMetrics,
-    projection_years: int = 10
-) -> ROEParameters:
+def get_params(stock_metrics: StockMetrics, projection_years: int = 10) -> ROEParameters:
     sector: Sectors = stock_metrics.profile.sector
-
-    margin_of_safety = ROE_MARGIN_OF_SAFETY.get(sector, 0.25)
-    discount_rate = ROE_DISCOUNT_RATE.get(sector, 0.09)
-
-    # Fix 2.1: corrected kwarg name from margin_of_safty → margin_of_safety
     return ROEParameters(
-        margin_of_safety=margin_of_safety,
-        discount_rate=discount_rate,
-        projection_years=projection_years
+        margin_of_safety=ROE_MARGIN_OF_SAFETY.get(sector, 0.25),
+        discount_rate=ROE_DISCOUNT_RATE.get(sector, 0.09),
+        projection_years=projection_years,
     )

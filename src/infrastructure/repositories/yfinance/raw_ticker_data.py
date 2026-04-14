@@ -1,11 +1,3 @@
-"""
-RawTickerData — the boundary value object produced by YfinanceFetcher
-and consumed by YfinanceParser.
-
-Keeping this as a frozen dataclass enforces that the fetcher's output is
-immutable before it reaches the parser. Tests can construct instances
-directly from fixture DataFrames with no network dependency.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,36 +8,6 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class RawTickerData:
-    """
-    Everything the yfinance API returns for a single ticker, in raw form.
-
-    Fields
-    ------
-    ticker_symbol
-        The normalised (upper-case, stripped) symbol used to fetch.
-    info
-        The ``ticker.info`` dict from yfinance.  Never None — an empty dict
-        is used when yfinance fails so downstream code has a single safe path.
-    annual_income : DataFrame
-        Annual income statement (``ticker.financials``).
-    annual_cashflow : DataFrame
-        Annual cash-flow statement (``ticker.cashflow``).
-    annual_balance_sheet : DataFrame
-        Annual balance sheet (``ticker.balance_sheet``).
-    quarterly_income : DataFrame
-        Quarterly income statement (``ticker.quarterly_financials``).
-    quarterly_cashflow : DataFrame
-        Quarterly cash-flow statement (``ticker.quarterly_cashflow``).
-    quarterly_balance_sheet : DataFrame
-        Quarterly balance sheet (``ticker.quarterly_balance_sheet``).
-    earnings_history_raw : DataFrame | None
-        Raw earnings-history frame from ``ticker.earnings_history``, if
-        available.  None when the attribute is absent or empty.
-    price_history_raw : DataFrame | None
-        Monthly OHLCV history from ``ticker.history(period="max",
-        interval="1mo")``.  None when unavailable.
-    """
-
     ticker_symbol: str
     info: Dict[str, Any]
 
@@ -78,7 +40,6 @@ class RawTickerData:
 
 
 def _df_eq(a: Optional[pd.DataFrame], b: Optional[pd.DataFrame]) -> bool:
-    """Structural equality for two optional DataFrames."""
     if a is None and b is None:
         return True
     if a is None or b is None:
@@ -90,13 +51,8 @@ def _df_eq(a: Optional[pd.DataFrame], b: Optional[pd.DataFrame]) -> bool:
     except Exception:
         return False
 
-def empty_raw(ticker_symbol: str = "TEST") -> RawTickerData:
-    """
-    Return a RawTickerData with all DataFrames empty and an empty info dict.
 
-    Useful as a base for test fixtures — override only the fields relevant
-    to the behaviour under test.
-    """
+def empty_raw(ticker_symbol: str = "TEST") -> RawTickerData:
     empty = pd.DataFrame()
     return RawTickerData(
         ticker_symbol=ticker_symbol,

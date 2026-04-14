@@ -17,13 +17,6 @@ class BaseStockMetricsMapper(GenericMapper):
 
     @classmethod
     def _class_to_field_map(cls) -> Dict[Type, Any]:
-        """
-        Return a {DomainClass -> StockMetrics.field_descriptor} mapping.
-
-        Built lazily so that ``typing.get_type_hints()`` is called after all
-        domain classes are fully imported and their string annotations can be
-        resolved to real types.
-        """
         if cls._CLASS_TO_FIELD_REF_MAP_CACHE is not None:
             return cls._CLASS_TO_FIELD_REF_MAP_CACHE
 
@@ -31,7 +24,7 @@ class BaseStockMetricsMapper(GenericMapper):
         try:
             hints = typing.get_type_hints(StockMetrics)
         except Exception:
-            hints = StockMetrics.__annotations__ 
+            hints = StockMetrics.__annotations__
 
         for field_name, field_type in hints.items():
             field_attr = getattr(StockMetrics, field_name, None)

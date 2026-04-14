@@ -109,21 +109,6 @@ class GenericMapper(ABC):
 
     @staticmethod
     def extract_domain(cls: type) -> Dict[str, Any]:
-        """
-        Return the resolved type annotations for ``cls``.
-
-        Uses ``typing.get_type_hints()`` rather than ``cls.__annotations__``
-        so that PEP-563 stringified annotations (produced by
-        ``from __future__ import annotations``) are evaluated before
-        ``is_optional_type`` inspects them.  Without this, every
-        ``Optional[X]`` field appears as the string ``"Optional[X]"``,
-        ``get_origin`` returns ``None``, and ``is_optional_type`` incorrectly
-        reports the field as required — causing the mapper coverage check to
-        reject any class that uses future annotations.
-
-        Falls back to ``__annotations__`` if evaluation fails (e.g. genuine
-        unresolvable forward references).
-        """
         try:
             hints = get_type_hints(cls)
             if hints:

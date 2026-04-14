@@ -14,22 +14,11 @@ class ROEManager(ValuationManager):
     stock_metrics: StockMetrics
     params: ROEParameters
 
-    def __init__(
-        self,
-        stock_metrics: StockMetrics,
-        projection_years: int = 10,
-        params: Optional[ValuationParams] = None,
-    ) -> None:
+    def __init__(self, stock_metrics: StockMetrics, projection_years: int = 10, params: Optional[ValuationParams] = None) -> None:
         self.set_valuation(stock_metrics, projection_years, params)
 
-    def set_valuation(
-        self,
-        stock_metrics: StockMetrics,
-        projection_years: int = 10,
-        params: Optional[ValuationParams] = None,
-    ) -> None:
+    def set_valuation(self, stock_metrics: StockMetrics, projection_years: int = 10, params: Optional[ValuationParams] = None) -> None:
         self.stock_metrics = stock_metrics
-
         if params is None:
             self.params = get_params(stock_metrics, projection_years)
         else:
