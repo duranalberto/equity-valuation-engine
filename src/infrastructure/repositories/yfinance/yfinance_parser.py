@@ -224,7 +224,11 @@ class YfinanceParser:
                     continue
                 field_info = {}
                 for idx in df.index:
-                    row     = df.loc[idx]
+                    row = df.loc[idx]
+                    if isinstance(row, pd.DataFrame):
+                        if row.empty:
+                            continue
+                        row = row.iloc[0]
                     numeric = pd.to_numeric(row, errors="coerce")
                     count   = int(numeric.count())
                     field_info[str(idx)] = {

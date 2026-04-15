@@ -1,4 +1,3 @@
-from typing import Optional
 from domain.metrics.stock import StockMetrics
 
 

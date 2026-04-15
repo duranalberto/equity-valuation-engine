@@ -1,6 +1,10 @@
-import random
+import hashlib
 import logging
+import random
+import math
+from datetime import date
 from typing import Dict, List, Optional
+
 from domain.core.enums import Sectors
 from domain.metrics.stock import StockMetrics
 
@@ -53,6 +57,22 @@ _GROWTH_CEILING =  0.50
 _FALLBACK_BASE_GROWTH = 0.04
 
 
+def _default_seed(ticker: str) -> int:
+    """
+    Derive a stable integer seed from the ticker symbol and the current
+    calendar date (YYYY-MM-DD).
+
+    This ensures:
+    - The same ticker on the same day always yields identical growth rates.
+    - Results change naturally on a new calendar day (avoids stale-cache
+      artefacts while keeping intra-day runs perfectly reproducible).
+    - Different tickers on the same day never collide.
+    """
+    key = f"{ticker.upper()}:{date.today().isoformat()}"
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    return int(digest[:16], 16)
+
+
 def _derive_base_growth(stock_metrics: StockMetrics) -> float:
     val = stock_metrics.valuation
     fin = stock_metrics.financials
@@ -61,7 +81,7 @@ def _derive_base_growth(stock_metrics: StockMetrics) -> float:
 
     if val and val.forward_growth_rate is not None and val.forward_growth_rate != 0.0:
         candidates.append(val.forward_growth_rate)
-    if val and val.fcf_cagr is not None:
+    if val and val.fcf_cagr is not None and isinstance(val.fcf_cagr, (int, float)) and math.isfinite(val.fcf_cagr):
         candidates.append(val.fcf_cagr)
     if fin and fin.net_income_growth is not None:
         candidates.append(fin.net_income_growth)
@@ -71,6 +91,14 @@ def _derive_base_growth(stock_metrics: StockMetrics) -> float:
     if not candidates:
         logger.debug(
             "No stock-specific growth signal found for %s; using fallback %.0f%%.",
+            stock_metrics.profile.ticker, _FALLBACK_BASE_GROWTH * 100,
+        )
+        return _FALLBACK_BASE_GROWTH
+
+    candidates = [c for c in candidates if isinstance(c, (int, float)) and math.isfinite(c)]
+    if not candidates:
+        logger.debug(
+            "No finite stock-specific growth signal found for %s; using fallback %.0f%%.",
             stock_metrics.profile.ticker, _FALLBACK_BASE_GROWTH * 100,
         )
         return _FALLBACK_BASE_GROWTH
@@ -90,8 +118,40 @@ def generate_growth_scenarios(
     projection_years: int,
     margin_of_safety: float = 0.25,
     random_seed: Optional[int] = None,
+    stochastic: bool = False,
 ) -> Dict[str, List[float]]:
-    rng = random.Random(random_seed)
+    """
+    Generate Bear / Base / Bull growth-rate lists for a given ticker.
+
+    Reproducibility
+    ---------------
+    By default (``stochastic=False``) the seed is deterministically derived
+    from the ticker symbol and today's date via :func:`_default_seed`.  This
+    guarantees that every call for the same ticker on the same calendar day
+    returns identical results, while still allowing the natural day-over-day
+    drift that reflects updated market data.
+
+    Pass ``stochastic=True`` (and optionally an explicit ``random_seed``) to
+    opt into non-deterministic mode, e.g. for Monte Carlo simulations.
+
+    Parameters
+    ----------
+    stock_metrics   : fully-built ``StockMetrics`` aggregate.
+    projection_years: number of annual growth rates to generate.
+    margin_of_safety: Bear multiplier reduction / Bull multiplier boost.
+    random_seed     : explicit seed override; takes priority over the
+                      auto-derived seed when provided.
+    stochastic      : when ``True`` and ``random_seed`` is ``None``, use
+                      ``random.Random()`` with no seed (OS entropy).
+    """
+    if random_seed is not None:
+        seed = random_seed
+    elif stochastic:
+        seed = None  # Python's random.Random(None) uses OS entropy
+    else:
+        seed = _default_seed(stock_metrics.profile.ticker)
+
+    rng = random.Random(seed)
     sector: Sectors = stock_metrics.profile.sector
     base_growth = _derive_base_growth(stock_metrics)
 

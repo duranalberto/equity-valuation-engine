@@ -20,14 +20,14 @@ def cost_of_equity_capm(
 
 
 def intrinsic_value_per_share(
-    enterprise_value: float,
+    equity_value: float,
     shares_outstanding: float,
 ) -> float:
     if shares_outstanding <= 0:
         raise ValueError(
             "Shares outstanding must be positive for per-share calculation."
         )
-    return enterprise_value / shares_outstanding
+    return equity_value / shares_outstanding
 
 
 def _discount_to_present(

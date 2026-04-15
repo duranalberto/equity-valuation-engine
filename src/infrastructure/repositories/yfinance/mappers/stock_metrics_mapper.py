@@ -1,23 +1,38 @@
-from .yfinance_fields import (
-    CurrencyType, YfLabelField, YfFinancialField, YfSeriesField,
+from domain.core.enums import Sectors
+from domain.metrics.history import (
+    BalanceSheetHistory,
+    CashFlowHistory,
+    FinancialsHistory,
 )
-from infrastructure.repositories.financial_repository import (
-    EnumField, Statement, Period, Action,
+from domain.metrics.stock import (
+    BalanceSheet,
+    CashFlow,
+    CompanyProfile,
+    Financials,
+    MarketData,
+    StockMetrics,
 )
 from infrastructure.mappers.base_mapper import GenericMapper
 from infrastructure.mappers.stock_metrics_mapper import BaseStockMetricsMapper
-from domain.core.enums import Sectors
-from domain.metrics.stock import (
-    StockMetrics, CompanyProfile, Valuation, Financials,
-    MarketData, CashFlow, BalanceSheet,
-)
-from domain.metrics.history import (
-    FinancialsHistory, CashFlowHistory, BalanceSheetHistory,
-)
-from .common_constants import (
-    SECTOR_LABEL, FINANCIAL_CURRENCY_LABEL, TRADING_CURRENCY_LABEL,
+from infrastructure.repositories.financial_repository import (
+    Action,
+    EnumField,
+    Period,
+    Statement,
 )
 
+from .common_constants import (
+    FINANCIAL_CURRENCY_LABEL,
+    SECTOR_LABEL,
+    TRADING_CURRENCY_LABEL,
+)
+from .yfinance_fields import (
+    CurrencyType,
+    YfFinancialField,
+    YfLabelField,
+    YfPerShareFinancialField,
+    YfSeriesField,
+)
 
 EPS_LABELS = [
     "eps", "earnings per share", "diluted earnings per share",
@@ -218,10 +233,6 @@ _INVENTORY_LABELS = [
     "work in progress",
 ]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Convenience shorthands for field construction
-# ─────────────────────────────────────────────────────────────────────────────
-
 _FIN_INC_TTM = {
     "currency_type": CurrencyType.FINANCIAL,
     "statement":     Statement.INCOME,
@@ -240,9 +251,6 @@ _FIN_BS_LATEST = {
     "action":        Action.GET_LATEST_VALUE,
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Existing scalar sub-mappers (unchanged)
-# ─────────────────────────────────────────────────────────────────────────────
 
 class CompanyProfileMapper(GenericMapper):
 
@@ -411,20 +419,20 @@ class MarketDataMapper(GenericMapper):
                 label=["averageVolume", "averageDailyVolume10Day"],
                 currency_type=CurrencyType.TRADING,
             ),
-            MarketData.eps_ttm: YfFinancialField(
+            MarketData.eps_ttm: YfPerShareFinancialField(
                 label=EPS_LABELS,
                 currency_type=CurrencyType.NONE,
                 statement=Statement.INCOME,
                 action=Action.GET_TTM_VALUE,
             ),
-            MarketData.last_quarter_eps: YfFinancialField(
+            MarketData.last_quarter_eps: YfPerShareFinancialField(
                 label=EPS_LABELS,
                 currency_type=CurrencyType.NONE,
                 statement=Statement.INCOME,
                 period=Period.QUARTERLY,
                 action=Action.GET_LATEST_VALUE,
             ),
-            MarketData.last_year_eps: YfFinancialField(
+            MarketData.last_year_eps: YfPerShareFinancialField(
                 label=EPS_LABELS,
                 currency_type=CurrencyType.NONE,
                 statement=Statement.INCOME,
@@ -434,21 +442,8 @@ class MarketDataMapper(GenericMapper):
         }
 
 
-class ValuationMapper(GenericMapper):
-
-    @property
-    def target_type(self):
-        return Valuation
-
-    @property
-    def mapping(self):
-        return {
-            Valuation.cost_of_debt:       YfLabelField(label="costOfDebt"),
-            Valuation.corporate_tax_rate: YfLabelField(label="corporateTaxRate"),
-        }
-
-
 class StockMetricsMapper(BaseStockMetricsMapper):
+    _MAPPER_EXCLUDED_FIELDS: frozenset = frozenset({"valuation", "ratios", "historical_data"})
 
     @property
     def target_type(self):
@@ -456,14 +451,56 @@ class StockMetricsMapper(BaseStockMetricsMapper):
 
     @property
     def mapping(self):
+        profile       = getattr(StockMetrics, "profile")
+        financials    = getattr(StockMetrics, "financials")
+        cash_flow     = getattr(StockMetrics, "cash_flow")
+        balance_sheet = getattr(StockMetrics, "balance_sheet")
+        market_data   = getattr(StockMetrics, "market_data")
+
         return {
-            StockMetrics.profile:      CompanyProfileMapper(),
-            StockMetrics.financials:   FinancialsMapper(),
-            StockMetrics.cash_flow:    CashFlowMapper(),
-            StockMetrics.balance_sheet: BalanceSheetMapper(),
-            StockMetrics.market_data:  MarketDataMapper(),
-            StockMetrics.valuation:    ValuationMapper(),
+            profile:       CompanyProfileMapper(),
+            financials:    FinancialsMapper(),
+            cash_flow:     CashFlowMapper(),
+            balance_sheet: BalanceSheetMapper(),
+            market_data:   MarketDataMapper(),
         }
+
+    def validate(self) -> None:
+        """
+        Validate the mapper, exempting fields listed in ``_MAPPER_EXCLUDED_FIELDS``.
+
+        ``GenericMapper.validate()`` raises ``ValueError`` for any non-Optional
+        field of the target type that is absent from the mapping.  That contract
+        is correct for leaf sub-model mappers but must be relaxed here because
+        ``valuation``, ``ratios``, and ``historical_data`` on ``StockMetrics``
+        are built through dedicated factory paths that deliberately bypass the
+        mapper pipeline — they are never passed through ``build_model()``.
+
+        We re-implement only the missing-fields check from the base class,
+        filtering out the known exclusions, and then delegate duplicate-value
+        checking to the base implementation via ``_validate_unique_values()``.
+        """
+        domain = self.extract_domain(self.target_type)
+        mapping_keys = set(self.normalized_mapping.keys())
+
+        missing_required = {
+            key
+            for key in set(domain.keys()) - mapping_keys
+            if key not in self._MAPPER_EXCLUDED_FIELDS
+            and not self.is_optional_type(domain[key])
+        }
+        if missing_required:
+            raise ValueError(
+                f"StockMetricsMapper is missing required fields: {missing_required}"
+            )
+
+        extra = mapping_keys - set(domain.keys())
+        if extra:
+            raise ValueError(
+                f"StockMetricsMapper has invalid field names: {extra}"
+            )
+
+        self._validate_unique_values()
 
 
 _FIN_QUARTERLY = {"currency_type": CurrencyType.FINANCIAL, "statement": Statement.INCOME,        "period": Period.QUARTERLY}
@@ -481,10 +518,6 @@ class FinancialsHistoryMapper(GenericMapper):
     Uses string keys because ``FinancialsHistory`` is a plain ``@dataclass``
     (not ``bindable_dataclass``), so field descriptors are not bound as class
     attributes — only string keys work with ``GenericMapper._normalize_key``.
-
-    ``fcf_quarterly`` and ``fcf_annual`` do not exist on this class; they
-    belong to ``CashFlowHistory``.  The ``da_quarterly`` field is sourced from
-    the cash-flow statement (same row as ``Financials.da_ttm``).
     """
 
     @property
@@ -521,11 +554,8 @@ class CashFlowHistoryMapper(GenericMapper):
     """
     Maps ``CashFlowHistory`` source fields to ``YfSeriesField`` descriptors.
 
-    Uses string keys (plain ``@dataclass`` — see FinancialsHistoryMapper note).
-
     ``fcf_quarterly`` and ``fcf_annual`` are derived in ``__post_init__`` with
-    ``init=False`` and must NOT appear in the mapper: they are not constructor
-    arguments, so the mapper's field-coverage check must not require them.
+    ``init=False`` and must NOT appear in the mapper.
     """
 
     @property

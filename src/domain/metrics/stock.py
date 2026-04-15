@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from dataclasses import dataclass
+from typing import List, Optional, dataclass_transform
 
-from calculations import safe_div, metrics_formulas as mf
+from calculations import metrics_formulas as mf
+from calculations import safe_div
+
 from ..core.enums import Sectors
-from .history import FinancialsHistory, CashFlowHistory, BalanceSheetHistory
+from .history import BalanceSheetHistory, CashFlowHistory, FinancialsHistory
 
 
+@dataclass_transform()
 def bindable_dataclass(cls=None, /, **dataclass_kwargs):
     """
     Wrapper around @dataclass that also binds dataclass fields as class-level
@@ -28,6 +31,12 @@ def bindable_dataclass(cls=None, /, **dataclass_kwargs):
         return cls
 
     return wrapper if cls is None else wrapper(cls)
+
+
+def bind_dataclass_fields(cls):
+    for f in cls.__dataclass_fields__.values():
+        setattr(cls, f.name, f)
+    return cls
 
 
 @bindable_dataclass
@@ -109,6 +118,13 @@ class CashFlow:
     history: Optional[CashFlowHistory] = None
 
     def __post_init__(self) -> None:
+        if self.capex_ttm is not None:
+            self.capex_ttm = -abs(float(self.capex_ttm))
+        if self.latest_annual_capex is not None:
+            self.latest_annual_capex = -abs(float(self.latest_annual_capex))
+        if self.latest_quarter_capex is not None:
+            self.latest_quarter_capex = -abs(float(self.latest_quarter_capex))
+
         if self.operating_cf_ttm is not None and self.capex_ttm is not None:
             self.fcf_ttm = mf.safe_sum(self.operating_cf_ttm, self.capex_ttm)
         if self.oper_cf_last_year is not None and self.latest_annual_capex is not None:
@@ -166,6 +182,12 @@ class MarketData:
     volume:              Optional[int]
     avg_volume:          Optional[int]
 
+    def __post_init__(self) -> None:
+        if self.shares_outstanding is None or self.shares_outstanding <= 0:
+            raise ValueError(
+                "shares_outstanding must be a positive integer."
+            )
+
 
 
 @bindable_dataclass
@@ -175,7 +197,7 @@ class HistoricalData:
 
 
 
-@bindable_dataclass(frozen=True)
+@dataclass(frozen=True)
 class Valuation:
     """
     Derived valuation inputs and multiples.
@@ -263,10 +285,12 @@ class Valuation:
 
         median_pe = None
         if historical_data and historical_data.price_history:
-            median_pe = mf.median_pe_ratio(
-                prices=historical_data.price_history,
-                eps_values=historical_data.eps_history,
-            )
+            eps_history = historical_data.eps_history
+            if eps_history:
+                median_pe = mf.median_pe_ratio(
+                    prices=historical_data.price_history,
+                    eps_values=eps_history,
+                )
 
         fcf_cagr: Optional[float] = None
 
@@ -296,11 +320,7 @@ class Valuation:
         )
 
 
-# --------------------------------------------------------------------------- #
-# Ratios                                                                       #
-# --------------------------------------------------------------------------- #
-
-@bindable_dataclass(frozen=True)
+@dataclass(frozen=True)
 class Ratios:
     """
     Computed financial ratios.
@@ -461,9 +481,9 @@ class Ratios:
         )
 
 
-# --------------------------------------------------------------------------- #
-# StockMetrics                                                                 #
-# --------------------------------------------------------------------------- #
+bind_dataclass_fields(Valuation)
+bind_dataclass_fields(Ratios)
+
 
 @bindable_dataclass
 class StockMetrics:

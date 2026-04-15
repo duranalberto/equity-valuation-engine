@@ -1,5 +1,8 @@
 from .common_constants import SECTOR_LABEL, FINANCIAL_CURRENCY_LABEL, TRADING_CURRENCY_LABEL
-from .yfinance_fields import CurrencyType, CurrencyField, YfLabelField, YfFinancialField, YfSeriesField
+from .yfinance_fields import (
+    CurrencyType, CurrencyField, YfLabelField, YfFinancialField,
+    YfPerShareFinancialField, YfSeriesField,
+)
 from .stock_metrics_mapper import (
     StockMetricsMapper,
     FinancialsHistoryMapper,
@@ -19,6 +22,7 @@ __all__ = [
     CurrencyField,
     YfLabelField,
     YfFinancialField,
+    YfPerShareFinancialField,
     YfSeriesField,
     sector_mapper,
     StockMetricsMapper,

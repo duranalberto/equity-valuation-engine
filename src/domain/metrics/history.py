@@ -34,9 +34,11 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
-# --------------------------------------------------------------------------- #
-# FinancialsHistory                                                            #
-# --------------------------------------------------------------------------- #
+def _normalize_capex_series(series: Optional[List[float]]) -> Optional[List[float]]:
+    if series is None:
+        return None
+    return [-abs(float(value)) for value in series]
+
 
 @dataclass
 class FinancialsHistory:
@@ -49,8 +51,7 @@ class FinancialsHistory:
     The ``da_quarterly`` field carries Depreciation & Amortisation from the
     cash-flow statement (same source as ``Financials.da_ttm``).
     """
-
-    # ── Quarterly series ────────────────────────────────────────────────
+    
     revenue_quarterly:          Optional[List[float]] = None
     gross_profit_quarterly:     Optional[List[float]] = None
     operating_income_quarterly: Optional[List[float]] = None
@@ -59,9 +60,8 @@ class FinancialsHistory:
     ebt_quarterly:              Optional[List[float]] = None
     tax_expense_quarterly:      Optional[List[float]] = None
     interest_expense_quarterly: Optional[List[float]] = None
-    da_quarterly:               Optional[List[float]] = None   # from cashflow stmt
-
-    # ── Annual series ───────────────────────────────────────────────────
+    da_quarterly:               Optional[List[float]] = None
+    
     revenue_annual:             Optional[List[float]] = None
     gross_profit_annual:        Optional[List[float]] = None
     operating_income_annual:    Optional[List[float]] = None
@@ -70,11 +70,6 @@ class FinancialsHistory:
     ebt_annual:                 Optional[List[float]] = None
     tax_expense_annual:         Optional[List[float]] = None
     interest_expense_annual:    Optional[List[float]] = None
-
-
-# --------------------------------------------------------------------------- #
-# CashFlowHistory                                                              #
-# --------------------------------------------------------------------------- #
 
 @dataclass
 class CashFlowHistory:
@@ -85,28 +80,27 @@ class CashFlowHistory:
     in ``__post_init__``, exactly as ``CashFlow.fcf_ttm`` is derived from
     ``operating_cf_ttm`` and ``capex_ttm``.
 
-    Note: capex values from yfinance are typically reported as negative numbers
-    (cash outflows).  The FCF derivation adds them directly, preserving the
-    same semantics as ``CashFlow.__post_init__``.
+    Note: capex values from yfinance can arrive with inconsistent signs
+    across providers.  Capex series are normalized to negative outflows before
+    deriving FCF, matching the scalar ``CashFlow`` model.
     """
 
-    # ── Quarterly series ────────────────────────────────────────────────
     operating_cf_quarterly:   Optional[List[float]] = None
     capex_quarterly:          Optional[List[float]] = None
     dividends_paid_quarterly: Optional[List[float]] = None
     share_buybacks_quarterly: Optional[List[float]] = None
 
-    # ── Annual series ───────────────────────────────────────────────────
     operating_cf_annual:      Optional[List[float]] = None
     capex_annual:             Optional[List[float]] = None
     dividends_paid_annual:    Optional[List[float]] = None
     share_buybacks_annual:    Optional[List[float]] = None
 
-    # ── Derived FCF series (computed in __post_init__) ──────────────────
     fcf_quarterly: Optional[List[float]] = field(default=None, init=False)
     fcf_annual:    Optional[List[float]] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
+        self.capex_quarterly = _normalize_capex_series(self.capex_quarterly)
+        self.capex_annual = _normalize_capex_series(self.capex_annual)
         self.fcf_quarterly = _pairwise_sum(
             self.operating_cf_quarterly, self.capex_quarterly
         )
@@ -114,10 +108,6 @@ class CashFlowHistory:
             self.operating_cf_annual, self.capex_annual
         )
 
-
-# --------------------------------------------------------------------------- #
-# BalanceSheetHistory                                                          #
-# --------------------------------------------------------------------------- #
 
 @dataclass
 class BalanceSheetHistory:
@@ -129,7 +119,6 @@ class BalanceSheetHistory:
     across fiscal years.
     """
 
-    # ── Quarterly snapshots ─────────────────────────────────────────────
     total_debt_quarterly:              Optional[List[float]] = None
     total_equity_quarterly:            Optional[List[float]] = None
     cash_quarterly:                    Optional[List[float]] = None
@@ -139,16 +128,11 @@ class BalanceSheetHistory:
     current_liabilities_quarterly:     Optional[List[float]] = None
     inventory_quarterly:               Optional[List[float]] = None
 
-    # ── Annual snapshots ────────────────────────────────────────────────
     total_debt_annual:                 Optional[List[float]] = None
     total_equity_annual:               Optional[List[float]] = None
     cash_annual:                       Optional[List[float]] = None
     total_assets_annual:               Optional[List[float]] = None
 
-
-# --------------------------------------------------------------------------- #
-# Internal helper                                                              #
-# --------------------------------------------------------------------------- #
 
 def _pairwise_sum(
     a: Optional[List[float]],

@@ -25,5 +25,5 @@ class PEValuationResult(ValuationResult):
 
 
 @dataclass
-class PEValuationReport(ValuationReport):
+class PEValuationReport(ValuationReport[PEValuationResult]):
     params: PEParameters

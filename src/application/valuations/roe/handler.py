@@ -1,23 +1,40 @@
 from typing import Optional
-from domain.valuation.base import ValuationParams, ValuationReport
+
+from domain.metrics.stock import StockMetrics
+from domain.valuation.base import ValuationParams
+from domain.valuation.models.roe import ROEParameters, ROEValuationReport
 from domain.valuation.policies import ValuationCheckResult
 from domain.valuation.valuation_manager import ValuationManager
-from domain.valuation.models.roe import ROEParameters, ROEValuationReport
-from domain.metrics.stock import StockMetrics
-from .valuation import execute_roe_scenarios
+
 from .defaults import get_params
 from .validator import ROEChecker
+from .valuation import execute_roe_scenarios
 
 
-class ROEManager(ValuationManager):
-    report: Optional[ROEValuationReport] = None
+class ROEManager(ValuationManager[ROEValuationReport]):
+    """
+    Orchestrates ROE valuation: parameter resolution, scenario execution,
+    and pre-flight suitability checking.
+    """
+
     stock_metrics: StockMetrics
     params: ROEParameters
 
-    def __init__(self, stock_metrics: StockMetrics, projection_years: int = 10, params: Optional[ValuationParams] = None) -> None:
+    def __init__(
+        self,
+        stock_metrics: StockMetrics,
+        projection_years: int = 10,
+        params: Optional[ValuationParams] = None,
+    ) -> None:
+        self.report: Optional[ROEValuationReport] = None
         self.set_valuation(stock_metrics, projection_years, params)
 
-    def set_valuation(self, stock_metrics: StockMetrics, projection_years: int = 10, params: Optional[ValuationParams] = None) -> None:
+    def set_valuation(
+        self,
+        stock_metrics: StockMetrics,
+        projection_years: int = 10,
+        params: Optional[ValuationParams] = None,
+    ) -> None:
         self.stock_metrics = stock_metrics
         if params is None:
             self.params = get_params(stock_metrics, projection_years)

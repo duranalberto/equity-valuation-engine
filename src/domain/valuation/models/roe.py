@@ -31,5 +31,5 @@ class ROEValuationResult(ValuationResult):
 
 
 @dataclass
-class ROEValuationReport(ValuationReport):
+class ROEValuationReport(ValuationReport[ROEValuationResult]):
     params: ROEParameters

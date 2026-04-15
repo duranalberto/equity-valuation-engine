@@ -1,4 +1,6 @@
-from typing import Optional, List, Union
+import math
+from typing import List, Optional, Union
+
 from .common import safe_div, safe_sum
 
 
@@ -67,30 +69,60 @@ def cagr_from_series(values: List[float]) -> Optional[float]:
     start, end = values[0], values[-1]
     if start is None or end is None or start == 0 or end == 0:
         return None
+    if start < 0 < end or end < 0 < start:
+        return None
     try:
-        return (end / start) ** (1.0 / (len(values) - 1)) - 1.0
+        result = (end / start) ** (1.0 / (len(values) - 1)) - 1.0
     except Exception:
         return None
+    if isinstance(result, complex) or not math.isfinite(result):
+        return None
+    return float(result)
 
 
 def median_pe_ratio(
     prices: List[float],
     eps_values: List[float],
 ) -> Optional[float]:
+    """
+    Compute the median historical P/E from parallel price and EPS lists.
+
+    The lists are still zipped positionally (oldest-first), so the caller is
+    responsible for ensuring they cover the same time window and granularity.
+    Mismatched lengths are handled by truncating to the shorter list, as
+    before.
+    """
     if not prices or not eps_values:
         return None
+
     min_len = min(len(prices), len(eps_values))
+
     pe_series = [
         p / e
         for p, e in zip(prices[:min_len], eps_values[:min_len])
-        if e is not None and e > 0
+        if e is not None and e > 0 and p is not None and p > 0
     ]
-    if not pe_series:
+
+    if len(pe_series) < 3:
         return None
-    sorted_vals = sorted(pe_series)
-    n = len(sorted_vals)
-    mid = n // 2
-    return sorted_vals[mid] if n % 2 == 1 else (sorted_vals[mid - 1] + sorted_vals[mid]) / 2.0
+
+    sorted_pe = sorted(pe_series)
+    n = len(sorted_pe)
+    q1 = sorted_pe[n // 4]
+    q3 = sorted_pe[(3 * n) // 4]
+    iqr = q3 - q1
+    fence_low  = q1 - 3.0 * iqr
+    fence_high = q3 + 3.0 * iqr
+    filtered = [v for v in sorted_pe if fence_low <= v <= fence_high]
+
+    if len(filtered) < 3:
+        filtered = sorted_pe
+
+    n2 = len(filtered)
+    mid = n2 // 2
+    if n2 % 2 == 1:
+        return filtered[mid]
+    return (filtered[mid - 1] + filtered[mid]) / 2.0
 
 
 def calculate_growth(

@@ -1,11 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import Optional
-from .base import ValuationParams, ValuationReport, ValuationInput, ValuationResult
-from .policies import ValuationCheckResult
-from ..metrics.stock import StockMetrics
+from typing import Generic, Optional, TypeVar
 
-class ValuationManager(ABC):
-    report: Optional[ValuationReport] = None
+from ..metrics.stock import StockMetrics
+from .base import ValuationParams, ValuationReport
+from .policies import ValuationCheckResult
+
+TReport = TypeVar("TReport", bound=ValuationReport)
+
+class ValuationManager(ABC, Generic[TReport]):
+    """
+    Abstract base for all valuation managers.
+    """
+
     stock_metrics: StockMetrics
 
     @abstractmethod
@@ -13,7 +19,7 @@ class ValuationManager(ABC):
         self,
         stock_metrics: StockMetrics,
         projection_years: int = 10,
-        params: Optional[ValuationParams] = None
+        params: Optional[ValuationParams] = None,
     ) -> None:
         pass
 
@@ -22,12 +28,12 @@ class ValuationManager(ABC):
         self,
         stock_metrics: StockMetrics,
         projection_years: int = 10,
-        params: Optional[ValuationParams] = None
+        params: Optional[ValuationParams] = None,
     ) -> None:
         pass
 
     @abstractmethod
-    def execute_valuation_scenarios(self) -> ValuationReport:
+    def execute_valuation_scenarios(self) -> TReport:
         pass
 
     @abstractmethod

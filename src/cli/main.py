@@ -1,15 +1,13 @@
-import sys
-import logging
 import argparse
-from typing import List, Type, NamedTuple, Callable, Dict
+import logging
+import sys
+from typing import Callable, Dict, List, NamedTuple, Type
 
-from domain import StockMetrics
-from domain.valuation.valuation_manager import ValuationManager
-from domain.valuation.base import ValuationReport
-from domain.valuation.policies import ValuationCheckResult
-
-from application import DCFManager, PEManager, ROEManager, MetricsLoader
+from application import DCFManager, MetricsLoader, PEManager, ROEManager
 from cli.json_formatter import to_json
+from domain import StockMetrics
+from domain.valuation.policies import ValuationCheckResult
+from domain.valuation.valuation_manager import ValuationManager
 
 from .presenters.dcf_presenter import cli_print_valuation as dcf_print
 from .presenters.pe_presenter import cli_print_valuation as pe_print

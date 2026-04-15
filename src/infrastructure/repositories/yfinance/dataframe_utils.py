@@ -19,7 +19,7 @@ def normalize_df_index(df: pd.DataFrame) -> pd.DataFrame:
         return df
     new_df = df.copy()
     try:
-        new_df.index = [normalize_label(i) for i in new_df.index]
+        new_df.index = pd.Index([normalize_label(i) for i in new_df.index])
     except Exception:
         pass
     return new_df
@@ -67,18 +67,31 @@ def _order_df_columns_by_date(df: pd.DataFrame, descending: bool = True) -> pd.D
     sortable = [(c, parsed[c]) for c in cols if not pd.isna(parsed[c])]
     unsortable = [c for c in cols if pd.isna(parsed[c])]
     sortable_sorted = sorted(sortable, key=lambda x: x[1], reverse=descending)
-    return df.reindex(columns=[c for c, _ in sortable_sorted] + unsortable)
+    return df.reindex(
+        columns=pd.Index([c for c, _ in sortable_sorted] + unsortable)
+    )
 
 
 def _extract_numeric_row(df: pd.DataFrame, idx: Any) -> pd.Series:
     if df is None or df.empty or idx not in df.index:
         return pd.Series(dtype=float)
-    row = pd.to_numeric(df.loc[idx], errors="coerce").dropna()
+    row = df.loc[idx]
+    if isinstance(row, pd.DataFrame):
+        if row.empty:
+            return pd.Series(dtype=float)
+        row = row.iloc[0]
+    row = pd.to_numeric(row, errors="coerce").dropna()
     if row.empty:
         return row
     try:
         dt_index = pd.to_datetime(row.index, errors="raise")
-        return row.loc[dt_index.sort_values().index]
+        ordered_labels = [
+            label for _, label in sorted(
+                zip(dt_index, row.index),
+                key=lambda item: item[0],
+            )
+        ]
+        return row.loc[ordered_labels]
     except Exception:
         pass
     try:
@@ -100,7 +113,12 @@ def extract_from_dataframe(
         match_key = _find_matching_index(df_norm, candidates)
         if match_key is None:
             return None
-        series = pd.to_numeric(df_norm.loc[match_key], errors="coerce")
+        row = df_norm.loc[match_key]
+        if isinstance(row, pd.DataFrame):
+            if row.empty:
+                return None
+            row = row.iloc[0]
+        series = pd.to_numeric(row, errors="coerce")
     else:
         match_key = _find_matching_column(df, candidates)
         if match_key is None:

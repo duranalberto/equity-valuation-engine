@@ -1,7 +1,8 @@
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol, Dict, List, runtime_checkable
+from typing import Dict, Generic, List, TypeVar
+
 from ..metrics.stock import StockMetrics
+
 
 @dataclass
 class ValuationParams:
@@ -18,7 +19,9 @@ class ValuationResult:
     growth_rates: List[float]
     valuation_status: str
 
+TValuationResult = TypeVar("TValuationResult", bound=ValuationResult)
+
 @dataclass
-class ValuationReport:
-    scenarios: Dict[str, ValuationResult]
+class ValuationReport(Generic[TValuationResult]):
+    scenarios: Dict[str, TValuationResult]
     params: ValuationParams

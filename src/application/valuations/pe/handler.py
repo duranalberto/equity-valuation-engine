@@ -1,30 +1,45 @@
 from typing import Optional
-from domain.valuation.base import ValuationParams, ValuationReport
+
+from domain.metrics.stock import StockMetrics
+from domain.valuation.models.pe import PEParameters, PEValuationReport
 from domain.valuation.policies import ValuationCheckResult
 from domain.valuation.valuation_manager import ValuationManager
-from domain.valuation.models.pe import PEParameters, PEValuationReport
-from domain.metrics.stock import StockMetrics
-from .valuation import execute_pe_scenarios
+
 from .defaults import get_params
 from .validator import PEChecker
+from .valuation import execute_pe_scenarios
 
 
-class PEManager(ValuationManager):
-    report: Optional[PEValuationReport] = None
+class PEManager(ValuationManager[PEValuationReport]):
+    """
+    Orchestrates P/E valuation: parameter resolution, scenario execution,
+    and pre-flight suitability checking.
+    """
+
     stock_metrics: StockMetrics
     params: PEParameters
 
-    def __init__(self, stock_metrics: StockMetrics, projection_years: int = 10, params: Optional[ValuationParams] = None) -> None:
+    def __init__(
+        self,
+        stock_metrics: StockMetrics,
+        projection_years: int = 10,
+        params: Optional[PEParameters] = None,
+    ) -> None:
+        self.report: Optional[PEValuationReport] = None
         self.set_valuation(stock_metrics, projection_years, params)
 
-    def set_valuation(self, stock_metrics: StockMetrics, projection_years: int = 10, params: Optional[ValuationParams] = None) -> None:
+    def set_valuation(
+        self,
+        stock_metrics: StockMetrics,
+        projection_years: int = 10,
+        params: Optional[PEParameters] = None,
+    ) -> None:
         self.stock_metrics = stock_metrics
         if params is None:
             self.params = get_params(stock_metrics, projection_years)
         else:
-            pe_params: PEParameters = params
-            pe_params.projection_years = projection_years
-            self.params = pe_params
+            params.projection_years = projection_years
+            self.params = params
 
     def execute_valuation_scenarios(self) -> PEValuationReport:
         valuation_report = execute_pe_scenarios(self.stock_metrics, self.params)

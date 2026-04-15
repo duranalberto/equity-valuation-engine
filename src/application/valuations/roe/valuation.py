@@ -1,10 +1,19 @@
-from typing import List, Dict, Optional
+import logging
+from typing import Dict, List, Optional
+
+from calculations import safe_div
 from domain.metrics.stock import StockMetrics
 from domain.valuation.models.roe import (
-    ROEValuationInput, ROEParameters, ROEValuationResult, ROEValuationReport,
+    ROEParameters,
+    ROEValuationInput,
+    ROEValuationReport,
+    ROEValuationResult,
 )
+
+from ..utils import evaluate_price, generate_growth_scenarios
 from .defaults import get_params
-from ..utils import generate_growth_scenarios, evaluate_price
+
+logger = logging.getLogger(__name__)
 
 
 def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
@@ -14,17 +23,20 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
     sm = input.stock_metrics
     pm = input.params
 
-    equity_per_share = sm.balance_sheet.total_equity
+    equity_per_share = safe_div(
+        sm.balance_sheet.total_equity,
+        sm.market_data.shares_outstanding,
+    )
+    if equity_per_share is None:
+        raise ValueError(
+            "shares_outstanding and total_equity must be positive for ROE valuation. "
+            "Run ROEChecker.evaluate() before calling execute_roe_scenarios()."
+        )
     dividend = input.dividend_rate_per_share
 
     for year in range(1, pm.projection_years + 1):
         growth_rate = input.growth_rates[year - 1]
-        if year == 1:
-            equity_per_share = (
-                (equity_per_share * (1 + growth_rate)) / sm.market_data.shares_outstanding
-            )
-        else:
-            equity_per_share *= (1 + growth_rate)
+        equity_per_share = equity_per_share * (1 + growth_rate)
 
         dividend *= (1 + growth_rate)
         npv_dividend = dividend / ((1 + pm.discount_rate) ** (year - 1))
@@ -32,7 +44,15 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
         dividend_progression.append(dividend)
         npv_dividend_progression.append(npv_dividend)
 
-    year_n_income = sm.ratios.return_on_equity * equity_per_share_progression[-1]
+    ratios = sm.ratios
+    if ratios is None:
+        raise ValueError("ratios must be available for ROE valuation.")
+
+    return_on_equity = ratios.return_on_equity
+    if return_on_equity is None:
+        raise ValueError("return_on_equity must be available for ROE valuation.")
+
+    year_n_income = return_on_equity * equity_per_share_progression[-1]
     required_value = year_n_income / pm.discount_rate
     npv_required_value = required_value / ((1 + pm.discount_rate) ** pm.projection_years)
     npv_dividends = sum(npv_dividend_progression)
@@ -61,6 +81,9 @@ def execute_roe_scenarios(
     stock_metrics: StockMetrics,
     params: Optional[ROEParameters] = None,
 ) -> ROEValuationReport:
+    """
+    Build Bear / Base / Bull ROE valuation scenarios.
+    """
     if params is None:
         params = get_params(stock_metrics)
 
@@ -70,7 +93,24 @@ def execute_roe_scenarios(
     if raw_dividends < 0:
         raw_dividends = abs(raw_dividends)
 
-    dividend_rate_per_share = raw_dividends / stock_metrics.market_data.shares_outstanding
+    dividend_rate_per_share = safe_div(
+        raw_dividends,
+        stock_metrics.market_data.shares_outstanding,
+    )
+
+    if dividend_rate_per_share is None:
+        shares = stock_metrics.market_data.shares_outstanding
+        logger.error(
+            "ROE valuation aborted for %s: shares_outstanding is %s. "
+            "Call ROEChecker.evaluate() first to surface this as a validation error.",
+            stock_metrics.profile.ticker,
+            shares,
+        )
+        raise ValueError(
+            f"Cannot compute dividend_rate_per_share: shares_outstanding is "
+            f"{shares!r} (must be a positive number). "
+            "Run ROEChecker.evaluate() before execute_roe_scenarios()."
+        )
 
     growth_scenarios = generate_growth_scenarios(
         stock_metrics, params.projection_years, params.margin_of_safety,

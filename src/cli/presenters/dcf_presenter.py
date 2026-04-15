@@ -1,8 +1,13 @@
 from tabulate import tabulate
-from domain.valuation.models.dcf import DCFValuationResult, DCFValuationReport
+
 from domain.metrics.stock import StockMetrics
-from .utils import fmt_num, fmt_pct, colors
-from typing import List
+from domain.valuation.models.dcf import (
+    DCFSensitivityReport,
+    DCFValuationReport,
+    DCFValuationResult,
+)
+
+from .utils import colors, fmt_num, fmt_pct
 
 
 def build_summary_metrics_table(current_price, pe_ratio, report):
@@ -61,6 +66,39 @@ def build_pv_fcf_table(report):
     return _build_projection_table(report, lambda r: r.dcf.pv_fcfs)
 
 
+def build_sensitivity_table(sens: DCFSensitivityReport) -> tuple[list, list]:
+    """
+    Returns (headers, rows) for a tabulate call.
+
+    Rows  → WACC values (descending so higher WACC is at the top, lower IV).
+    Cols  → terminal growth rate values (ascending left to right).
+
+    The base-case cell is marked with a '*' suffix to make it easy to spot.
+    """
+    tgr_headers = ["WACC \\ TGR"] + [fmt_pct(t) for t in sens.terminal_growth_values]
+
+    rows = []
+    wacc_indices = list(range(len(sens.wacc_values) - 1, -1, -1))
+    for i in wacc_indices:
+        wacc = sens.wacc_values[i]
+        label = fmt_pct(wacc)
+        if abs(wacc - sens.base_wacc) < 1e-6:
+            label += "*"
+        row = [label]
+        for j, tgr in enumerate(sens.terminal_growth_values):
+            cell_val = sens.intrinsic_values[i][j]
+            if cell_val is None:
+                cell = "N/A"
+            else:
+                cell = fmt_num(cell_val)
+                if abs(wacc - sens.base_wacc) < 1e-6 and abs(tgr - sens.base_terminal_growth) < 1e-6:
+                    cell += "*"
+            row.append(cell)
+        rows.append(row)
+
+    return tgr_headers, rows
+
+
 def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> None:
     ticker = metrics.profile.ticker
     current_price = metrics.market_data.current_price
@@ -98,4 +136,15 @@ def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> No
     pv_len = len(first_result.dcf.pv_fcfs)
     pv_headers = ["Scenario"] + [f"Year {i + 1}" for i in range(pv_len)] + ["Total Growth"]
     print(tabulate(build_pv_fcf_table(report), headers=pv_headers, tablefmt="fancy_grid"))
+
+    if report.sensitivity is not None:
+        sens = report.sensitivity
+        print(
+            f"\n-- Intrinsic Value Sensitivity: WACC × Terminal Growth Rate "
+            f"({sens.scenario_name} scenario FCFs) --"
+        )
+        print(f"   (* marks base-case cell: WACC={fmt_pct(sens.base_wacc)}, "
+              f"TGR={fmt_pct(sens.base_terminal_growth)})")
+        headers, rows = build_sensitivity_table(sens)
+        print(tabulate(rows, headers=headers, tablefmt="fancy_grid"))
     print()

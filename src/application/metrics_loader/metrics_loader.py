@@ -1,26 +1,47 @@
 from __future__ import annotations
 
+import logging
 from enum import Enum
-from typing import Optional, Type, Union, List
+from typing import List, Optional, Type, TypeVar, Union, cast, get_args, get_origin, get_type_hints
 
 import domain.metrics.stock as sm
-from domain.metrics.history import FinancialsHistory, CashFlowHistory, BalanceSheetHistory
-from infrastructure.repositories.financial_repository import (
-    Action, BaseField, EnumField,
-    FinancialField, LabelField, FinancialRepository, Period,
-)
-from infrastructure.repositories import YfinanceDataLoader
-from infrastructure.repositories.yfinance.mappers import (
-    FinancialsHistoryMapper,
-    CashFlowHistoryMapper,
-    BalanceSheetHistoryMapper,
-    YfSeriesField,
+from domain.metrics.history import (
+    BalanceSheetHistory,
+    CashFlowHistory,
+    FinancialsHistory,
 )
 from infrastructure.mappers.base_mapper import GenericMapper
+from infrastructure.repositories import YfinanceDataLoader
+from infrastructure.repositories.financial_repository import (
+    Action,
+    BaseField,
+    EnumField,
+    FinancialField,
+    FinancialRepository,
+    LabelField,
+    Period,
+)
+from infrastructure.repositories.yfinance.mappers import (
+    BalanceSheetHistoryMapper,
+    CashFlowHistoryMapper,
+    FinancialsHistoryMapper,
+    YfSeriesField,
+)
+
+logger = logging.getLogger(__name__)
+ModelT = TypeVar("ModelT")
+HistoryT = TypeVar("HistoryT")
+def _is_optional(annotation) -> bool:
+    """Return True when *annotation* is Optional[X] (i.e. Union[X, None])."""
+    return get_origin(annotation) is Union and type(None) in get_args(annotation)
 
 
 class MetricsLoader:
-    HISTORY_MAPPERS: dict = {}
+    HISTORY_MAPPERS: dict = {
+        FinancialsHistory:   FinancialsHistoryMapper,
+        CashFlowHistory:     CashFlowHistoryMapper,
+        BalanceSheetHistory: BalanceSheetHistoryMapper,
+    }
 
     def __init__(
         self,
@@ -101,6 +122,12 @@ class MetricsLoader:
 
         Only ``highest_price`` is passed here.  ``cost_of_debt`` and
         ``corporate_tax_rate`` are derived inside ``Valuation.build``.
+
+        Note: ValuationMapper fields (costOfDebt, corporateTaxRate) in
+        StockMetricsMapper are intentionally unused because Valuation is
+        always built via Valuation.build() — the mapper would duplicate
+        derivation logic already expressed there.  The seed carries only
+        ``highest_price``, which has no formula equivalent.
         """
         return sm.Valuation(
             highest_price=self.loader.get_highest_price(),
@@ -120,17 +147,44 @@ class MetricsLoader:
             eps_history=self.loader.get_eps_history(),
         )
 
-    def build_model(self, model_cls: type) -> object:
+    def build_model(self, model_cls: type[ModelT]) -> ModelT:
+        """
+        Build a domain model instance from its registered mapper.
+
+        For every field in the mapper:
+        - If the descriptor is a ``BaseField``, dispatch to ``get_from_field``.
+        - Otherwise default to ``None``.
+
+        A ``ValueError`` is raised when a resolved ``None`` would be assigned
+        to a field whose type annotation is not ``Optional``.  This surfaces
+        data-quality problems at construction time rather than allowing silent
+        incorrect calculations downstream.
+        """
         mapper = self.mapper[model_cls]
+        try:
+            hints = get_type_hints(mapper.target_type)
+        except Exception:
+            hints = getattr(mapper.target_type, "__annotations__", {})
+
         kwargs = {}
         for field_name, field_def in mapper.items():
             if isinstance(field_def, BaseField):
-                kwargs[field_name] = self.get_from_field(field_def)
+                value = self.get_from_field(field_def)
             else:
-                kwargs[field_name] = None
-        return mapper.target_type(**kwargs)
+                value = None
 
-    def _build_history_model(self, mapper: GenericMapper) -> object:
+            if value is None and field_name in hints and not _is_optional(hints[field_name]):
+                raise ValueError(
+                    f"Required field '{field_name}' on {mapper.target_type.__name__} "
+                    f"resolved to None. Check that the data source contains this field "
+                    f"or mark the domain field as Optional."
+                )
+
+            kwargs[field_name] = value
+
+        return cast(ModelT, mapper.target_type(**kwargs))
+
+    def _build_history_model(self, mapper: GenericMapper) -> HistoryT:
         """
         Generic history model builder.
 
@@ -147,16 +201,16 @@ class MetricsLoader:
                 kwargs[field_name] = self.get_from_field(field_def)
             else:
                 kwargs[field_name] = None
-        return mapper.target_type(**kwargs)
+        return cast(HistoryT, mapper.target_type(**kwargs))
 
     def _build_financials_history(self) -> FinancialsHistory:
-        return self._build_history_model(FinancialsHistoryMapper()) 
+        return cast(FinancialsHistory, self._build_history_model(FinancialsHistoryMapper()))
 
     def _build_cashflow_history(self) -> CashFlowHistory:
-        return self._build_history_model(CashFlowHistoryMapper())
+        return cast(CashFlowHistory, self._build_history_model(CashFlowHistoryMapper()))
 
     def _build_balance_sheet_history(self) -> BalanceSheetHistory:
-        return self._build_history_model(BalanceSheetHistoryMapper())
+        return cast(BalanceSheetHistory, self._build_history_model(BalanceSheetHistoryMapper()))
 
     def build_stock_metrics(self) -> sm.StockMetrics:
         """
@@ -172,18 +226,17 @@ class MetricsLoader:
            are re-computed with the richer history data.
         """
         stock = sm.StockMetrics(
-            profile=self.build_model(sm.CompanyProfile),
-            financials=self.build_model(sm.Financials),
-            cash_flow=self.build_model(sm.CashFlow),
-            balance_sheet=self.build_model(sm.BalanceSheet),
-            ratios=None,
-            market_data=self.build_model(sm.MarketData),
-            valuation=self._build_valuation(),
-            historical_data=self._build_historical_data(),
+            self.build_model(sm.CompanyProfile),
+            self.build_model(sm.Financials),
+            self.build_model(sm.CashFlow),
+            self.build_model(sm.BalanceSheet),
+            self.build_model(sm.MarketData),
+            self._build_valuation(),
+            self._build_historical_data(),
         )
 
-        stock.financials.history   = self._build_financials_history()
-        stock.cash_flow.history    = self._build_cashflow_history()
+        stock.financials.history    = self._build_financials_history()
+        stock.cash_flow.history     = self._build_cashflow_history()
         stock.balance_sheet.history = self._build_balance_sheet_history()
 
         stock._rebuild_derived()

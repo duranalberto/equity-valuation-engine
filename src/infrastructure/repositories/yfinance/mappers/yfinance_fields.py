@@ -63,6 +63,27 @@ class YfFinancialField(FinancialField, CurrencyField):
 
 
 @dataclass(kw_only=True)
+class YfPerShareFinancialField(YfFinancialField):
+    """
+    Financial-statement descriptor for per-share metrics such as EPS.
+
+    These values are ratios, not currency amounts, so they must never be FX
+    converted. The invariant is enforced here rather than by convention in the
+    mapper.
+    """
+
+    def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
+        super().validate()
+        if self.currency_type is not CurrencyType.NONE:
+            raise ValueError(
+                "Per-share financial fields must use CurrencyType.NONE."
+            )
+
+
+@dataclass(kw_only=True)
 class YfSeriesField(FinancialField, CurrencyField):
     """
     Maps a history-companion field to a row in a financial statement
