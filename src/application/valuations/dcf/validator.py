@@ -1,6 +1,8 @@
 from typing import List, Optional, Tuple
 
 from config.config_loader import load_validator_config
+from domain.core.missing import Missing, MissingReason
+from domain.core.missing_registry import MissingRegistry
 from domain.core.enums import Sectors
 from domain.metrics.stock import StockMetrics
 from domain.valuation.policies import (
@@ -38,6 +40,9 @@ class DCFChecker(ValuationChecker):
         )
         self._score += weight
 
+    def missing_report(self) -> MissingRegistry:
+        return MissingRegistry().scan(self._metrics)
+
     def _interpret_score(self) -> Tuple[bool, str]:
         score = self._score
         if score == 0:
@@ -60,7 +65,14 @@ class DCFChecker(ValuationChecker):
             else FactorSeverity.CRITICAL
         )
 
-        if fcf_ttm is None:
+        if isinstance(fcf_ttm, Missing):
+            self._add_factor(
+                "Missing FCF (TTM)",
+                f"Free Cash Flow (TTM) data is missing: {fcf_ttm.reason.value}.",
+                FactorSeverity.WARNING if fcf_ttm.reason == MissingReason.NOT_REPORTED else FactorSeverity.CRITICAL,
+                fcf_ttm,
+            )
+        elif fcf_ttm is None:
             self._add_factor(
                 "Missing FCF (TTM)",
                 "Free Cash Flow (TTM) data is missing.",
@@ -83,7 +95,14 @@ class DCFChecker(ValuationChecker):
                     fcf_ttm,
                 )
 
-        if last_year_fcf is None:
+        if isinstance(last_year_fcf, Missing):
+            self._add_factor(
+                "Missing Last Year FCF",
+                f"Last Year FCF data is missing: {last_year_fcf.reason.value}.",
+                FactorSeverity.WARNING if last_year_fcf.reason == MissingReason.NOT_REPORTED else FactorSeverity.CRITICAL,
+                last_year_fcf,
+            )
+        elif last_year_fcf is None:
             self._add_factor(
                 "Missing Last Year FCF",
                 "Last Year FCF data is missing.",

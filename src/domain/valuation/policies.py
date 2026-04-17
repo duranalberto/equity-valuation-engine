@@ -1,3 +1,4 @@
+from domain.core.missing_registry import MissingRegistry
 from domain.metrics.stock import StockMetrics
 from typing import List, Union, Optional, Protocol, runtime_checkable
 from dataclasses import dataclass
@@ -30,4 +31,7 @@ class ValuationChecker(Protocol):
         ...
 
     def evaluate(self) -> ValuationCheckResult:
+        ...
+
+    def missing_report(self) -> MissingRegistry:
         ...

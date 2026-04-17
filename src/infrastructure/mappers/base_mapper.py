@@ -65,7 +65,11 @@ class GenericMapper(ABC):
             return
 
         domain = self.extract_domain(cls)
-        required_fields = set(domain.keys())
+        dataclass_fields = getattr(cls, "__dataclass_fields__", {})
+        required_fields = {
+            name for name, field in dataclass_fields.items()
+            if getattr(field, "init", True)
+        }
         mapping_keys = set(self.normalized_mapping.keys())
 
         extra = mapping_keys - required_fields

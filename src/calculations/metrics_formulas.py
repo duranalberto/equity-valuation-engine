@@ -1,44 +1,61 @@
 import math
 from typing import List, Optional, Union
 
+from domain.core.missing import Missing
+
 from .common import safe_div, safe_sum
 
 
 def enterprise_value(
-    market_cap: Optional[float],
-    total_debt: Optional[float],
-    cash: Optional[float],
-) -> Optional[float]:
+    market_cap: Optional[float] | Missing,
+    total_debt: Optional[float] | Missing,
+    cash: Optional[float] | Missing,
+) -> Optional[float] | Missing:
+    if isinstance(market_cap, Missing):
+        return market_cap
+    if isinstance(total_debt, Missing):
+        return total_debt
+    if isinstance(cash, Missing):
+        return cash
     if market_cap is None:
         return None
-    return safe_sum(market_cap, total_debt) - (cash or 0.0)
+    combined = safe_sum(market_cap, total_debt)
+    if isinstance(combined, Missing) or combined is None:
+        return combined
+    return combined - (cash or 0.0)
 
 
 def interest_coverage(
-    ebit_ttm: Optional[float],
-    interest_exp_ttm: Optional[float],
-) -> Optional[float]:
+    ebit_ttm: Optional[float] | Missing,
+    interest_exp_ttm: Optional[float] | Missing,
+) -> Optional[float] | Missing:
     if interest_exp_ttm is None or interest_exp_ttm == 0:
         return None
     return safe_div(ebit_ttm, abs(interest_exp_ttm))
 
 
 def quick_ratio(
-    current_assets: Optional[float],
-    inventory: Optional[float],
-    current_liabilities: Optional[float],
-) -> Optional[float]:
+    current_assets: Optional[float] | Missing,
+    inventory: Optional[float] | Missing,
+    current_liabilities: Optional[float] | Missing,
+) -> Optional[float] | Missing:
+    if isinstance(current_assets, Missing):
+        return current_assets
+    if isinstance(inventory, Missing):
+        return inventory
+    if isinstance(current_liabilities, Missing):
+        return current_liabilities
     if current_assets is None or current_liabilities is None:
         return None
-    numerator = current_assets - (inventory or 0.0)
+    numerator = float(current_assets) - float(inventory or 0.0)
     return safe_div(numerator, current_liabilities)
 
 
 def dividend_yield(
-    dividends_paid_ttm: Optional[float],
-    shares_outstanding: Optional[float],
-    current_price: Optional[float],
-) -> Optional[float]:
+    dividends_paid_ttm: Optional[float] | Missing,
+    shares_outstanding: Optional[float] | Missing,
+    current_price: Optional[float] | Missing,
+) -> Optional[float] | Missing:
     dps = safe_div(abs(dividends_paid_ttm or 0.0), shares_outstanding)
     if dps is None:
         return None
@@ -46,17 +63,23 @@ def dividend_yield(
 
 
 def payout_ratio(
-    dividends_paid_ttm: Optional[float],
-    net_income_ttm: Optional[float],
-) -> Optional[float]:
+    dividends_paid_ttm: Optional[float] | Missing,
+    net_income_ttm: Optional[float] | Missing,
+) -> Optional[float] | Missing:
     return safe_div(abs(dividends_paid_ttm or 0.0), net_income_ttm)
 
 
 def price_to_book(
-    price: Optional[float],
-    total_equity: Optional[float],
-    shares_outstanding: Optional[Union[float, int]],
-) -> Optional[float]:
+    price: Optional[float] | Missing,
+    total_equity: Optional[float] | Missing,
+    shares_outstanding: Optional[Union[float, int]] | Missing,
+) -> Optional[float] | Missing:
+    if isinstance(price, Missing):
+        return price
+    if isinstance(total_equity, Missing):
+        return total_equity
+    if isinstance(shares_outstanding, Missing):
+        return shares_outstanding
     if price is None or total_equity is None or shares_outstanding is None:
         return None
     book_value_per_share = safe_div(total_equity, float(shares_outstanding))
@@ -126,9 +149,9 @@ def median_pe_ratio(
 
 
 def calculate_growth(
-    current_value: Optional[float],
-    previous_value: Optional[float],
-) -> Optional[float]:
+    current_value: Optional[float] | Missing,
+    previous_value: Optional[float] | Missing,
+) -> Optional[float] | Missing:
     result = safe_div(current_value, previous_value)
     if result is None:
         return None
@@ -144,7 +167,10 @@ def roic(
 ) -> Optional[float]:
     if ebit_ttm is None:
         return None
-    invested_capital = safe_sum(total_debt, total_equity) - (cash_and_equivalents or 0.0)
+    invested_capital = safe_sum(total_debt, total_equity)
+    if isinstance(invested_capital, Missing) or invested_capital is None:
+        return invested_capital
+    invested_capital = invested_capital - (cash_and_equivalents or 0.0)
     if invested_capital == 0:
         return None
     nopat = ebit_ttm * (1.0 - (tax_rate or 0.0))

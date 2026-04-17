@@ -1,5 +1,6 @@
 from domain.metrics.stock import StockMetrics
 from typing import List, Tuple, Union, Optional
+from domain.core.missing_registry import MissingRegistry
 from domain.valuation.policies import (
     ValuationChecker, CheckFactor, FactorSeverity, ValuationCheckResult,
 )
@@ -23,6 +24,9 @@ class PEChecker(ValuationChecker):
         )
         self._factors.append(CheckFactor(name=name, message=message, severity=severity, weight=weight, value=value))
         self._score += weight
+
+    def missing_report(self) -> MissingRegistry:
+        return MissingRegistry().scan(self._metrics)
 
     def _interpret_score(self) -> Tuple[bool, str]:
         score = self._score

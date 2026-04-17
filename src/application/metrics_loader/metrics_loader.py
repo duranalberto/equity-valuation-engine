@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import List, Optional, Type, TypeVar, Union, cast, get_args, get_origin, get_type_hints
+from typing import List, Optional, Type, TypeVar, Union, cast
 
 import domain.metrics.stock as sm
+from domain.core.missing import Missing, MissingReason
 from domain.metrics.history import (
     BalanceSheetHistory,
     CashFlowHistory,
@@ -31,11 +32,6 @@ from infrastructure.repositories.yfinance.mappers import (
 logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT")
 HistoryT = TypeVar("HistoryT")
-def _is_optional(annotation) -> bool:
-    """Return True when *annotation* is Optional[X] (i.e. Union[X, None])."""
-    return get_origin(annotation) is Union and type(None) in get_args(annotation)
-
-
 class MetricsLoader:
     HISTORY_MAPPERS: dict = {
         FinancialsHistory:   FinancialsHistoryMapper,
@@ -96,20 +92,27 @@ class MetricsLoader:
 
     def get_from_field(
         self, field: BaseField
-    ) -> Optional[Union[float, str, Enum, List[float]]]:
+    ) -> Optional[Union[float, str, Enum, List[float], Missing]]:
         """
         Dispatch to the correct loader method based on field type and action.
         """
         if isinstance(field, FinancialField):
             match field.action:
                 case Action.GET_LATEST_VALUE:
-                    return self.get_latest_value(field)
+                    value = self.get_latest_value(field)
                 case Action.GET_TTM_VALUE:
-                    return self.get_ttm_value(field)
+                    value = self.get_ttm_value(field)
                 case Action.GET_TTM_PREV_VALUE:
-                    return self.get_ttm_prev_value(field)
+                    value = self.get_ttm_prev_value(field)
                 case Action.GET_SERIES:
-                    return self.get_series_value(field)
+                    value = self.get_series_value(field)
+            if value is None:
+                return Missing(
+                    reason=MissingReason.DATA_SOURCE_GAP,
+                    field=getattr(field, "label", str(field)),
+                    detail=f"No data returned from {type(self.loader).__name__}",
+                )
+            return value
 
         if isinstance(field, (LabelField, EnumField)):
             return self.loader.get_label(field)
@@ -154,31 +157,14 @@ class MetricsLoader:
         For every field in the mapper:
         - If the descriptor is a ``BaseField``, dispatch to ``get_from_field``.
         - Otherwise default to ``None``.
-
-        A ``ValueError`` is raised when a resolved ``None`` would be assigned
-        to a field whose type annotation is not ``Optional``.  This surfaces
-        data-quality problems at construction time rather than allowing silent
-        incorrect calculations downstream.
         """
         mapper = self.mapper[model_cls]
-        try:
-            hints = get_type_hints(mapper.target_type)
-        except Exception:
-            hints = getattr(mapper.target_type, "__annotations__", {})
-
         kwargs = {}
         for field_name, field_def in mapper.items():
             if isinstance(field_def, BaseField):
                 value = self.get_from_field(field_def)
             else:
                 value = None
-
-            if value is None and field_name in hints and not _is_optional(hints[field_name]):
-                raise ValueError(
-                    f"Required field '{field_name}' on {mapper.target_type.__name__} "
-                    f"resolved to None. Check that the data source contains this field "
-                    f"or mark the domain field as Optional."
-                )
 
             kwargs[field_name] = value
 

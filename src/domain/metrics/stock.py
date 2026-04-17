@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, dataclass_transform
+from dataclasses import dataclass, field
+from typing import List, dataclass_transform
 
 from calculations import metrics_formulas as mf
 from calculations import safe_div
+from domain.core.missing import Missing, MissingReason
 
 from ..core.enums import Sectors
 from .history import BalanceSheetHistory, CashFlowHistory, FinancialsHistory
@@ -42,15 +43,15 @@ def bind_dataclass_fields(cls):
 @bindable_dataclass
 class CompanyProfile:
     ticker:             str
-    company_name:       Optional[str]     = None
-    sector:             Optional[Sectors]  = None
-    industry:           Optional[str]     = None
-    country:            Optional[str]     = None
-    financial_currency: Optional[str]     = None
-    trading_currency:   Optional[str]     = None
-    exchange:           Optional[str]     = None
-    quote_type:         Optional[str]     = None
-    website:            Optional[str]     = None
+    company_name:       str | None = None
+    sector:             Sectors | None = None
+    industry:           str | None = None
+    country:            str | None = None
+    financial_currency: str | None = None
+    trading_currency:   str | None = None
+    exchange:           str | None = None
+    quote_type:         str | None = None
+    website:            str | None = None
 
 
 @bindable_dataclass
@@ -59,41 +60,65 @@ class Financials:
     Income-statement scalars (unchanged) plus an optional historical companion.
     """
 
-    revenue_ttm:           Optional[float]
-    ebit_ttm:              Optional[float]
-    ebt_ttm:               Optional[float]
-    tax_expense_ttm:       Optional[float]
-    interest_expense_ttm:  Optional[float]
-    gross_profit_ttm:      Optional[float]
-    operating_income_ttm:  Optional[float]
-    net_income_ttm:        Optional[float]
-    revenue_ttm_prev:      Optional[float]
-    net_income_ttm_prev:   Optional[float]
-    da_ttm:                Optional[float]
+    revenue_ttm:           float | Missing | None
+    ebit_ttm:              float | Missing | None
+    ebt_ttm:               float | Missing | None
+    tax_expense_ttm:       float | Missing | None
+    interest_expense_ttm:  float | Missing | None
+    gross_profit_ttm:      float | Missing | None
+    operating_income_ttm:  float | Missing | None
+    net_income_ttm:        float | Missing | None
+    revenue_ttm_prev:      float | Missing | None
+    net_income_ttm_prev:   float | Missing | None
+    da_ttm:                float | Missing | None
 
-    revenue_growth_rate:  Optional[float] = None
-    net_income_growth:    Optional[float] = None
-    gross_margin:         Optional[float] = None
-    operating_margin:     Optional[float] = None
-    net_margin:           Optional[float] = None
-    ebitda_ttm:           Optional[float] = None
+    revenue_growth_rate:  float | Missing | None = field(default=None, init=False)
+    net_income_growth:    float | Missing | None = field(default=None, init=False)
+    gross_margin:         float | Missing | None = field(default=None, init=False)
+    operating_margin:     float | Missing | None = field(default=None, init=False)
+    net_margin:           float | Missing | None = field(default=None, init=False)
+    ebitda_ttm:           float | Missing | None = field(default=None, init=False)
 
-    history: Optional[FinancialsHistory] = None
+    history: FinancialsHistory | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
+        self.history = None
         self.revenue_growth_rate = mf.calculate_growth(
             self.revenue_ttm, self.revenue_ttm_prev
         )
         self.net_income_growth = mf.calculate_growth(
             self.net_income_ttm, self.net_income_ttm_prev
         )
-        self.gross_margin    = safe_div(self.gross_profit_ttm, self.revenue_ttm)
-        self.operating_margin = safe_div(self.operating_income_ttm, self.revenue_ttm)
-        self.net_margin       = safe_div(self.net_income_ttm, self.revenue_ttm)
+        self.gross_margin = self._derived_ratio(
+            safe_div(self.gross_profit_ttm, self.revenue_ttm, "gross_margin"),
+            "gross_margin",
+        )
+        self.operating_margin = self._derived_ratio(
+            safe_div(self.operating_income_ttm, self.revenue_ttm),
+            "operating_margin",
+        )
+        self.net_margin = self._derived_ratio(
+            safe_div(self.net_income_ttm, self.revenue_ttm),
+            "net_margin",
+        )
         if self.ebit_ttm is not None and self.da_ttm is not None:
             self.ebitda_ttm = mf.safe_sum(self.ebit_ttm, self.da_ttm)
         else:
-            self.ebitda_ttm = None
+            self.ebitda_ttm = Missing(
+                MissingReason.INSUFFICIENT_DATA,
+                "ebitda_ttm",
+                "EBIT or D&A was not available to derive EBITDA.",
+            )
+
+    @staticmethod
+    def _derived_ratio(value: float | Missing | None, field: str) -> float | Missing:
+        if value is None:
+            return Missing(
+                MissingReason.INSUFFICIENT_DATA,
+                field,
+                f"{field} could not be computed because one or more inputs were unavailable.",
+            )
+        return value
 
 
 @bindable_dataclass
@@ -102,22 +127,23 @@ class CashFlow:
     Cash-flow scalars (unchanged) plus an optional historical companion.
     """
 
-    operating_cf_ttm:       Optional[float]
-    capex_ttm:              Optional[float]
-    oper_cf_last_year:      Optional[float]
-    latest_annual_capex:    Optional[float]
-    oper_cf_last_quarter:   Optional[float]
-    latest_quarter_capex:   Optional[float]
-    dividends_paid_ttm:     Optional[float]
-    share_buybacks_ttm:     Optional[float]
+    operating_cf_ttm:       float | Missing | None
+    capex_ttm:              float | Missing | None
+    oper_cf_last_year:      float | Missing | None
+    latest_annual_capex:    float | Missing | None
+    oper_cf_last_quarter:   float | Missing | None
+    latest_quarter_capex:   float | Missing | None
+    dividends_paid_ttm:     float | Missing | None
+    share_buybacks_ttm:     float | Missing | None
 
-    fcf_ttm:          Optional[float] = None
-    last_year_fcf:    Optional[float] = None
-    last_quarter_fcf: Optional[float] = None
+    fcf_ttm:          float | Missing | None = field(default=None, init=False)
+    last_year_fcf:    float | Missing | None = field(default=None, init=False)
+    last_quarter_fcf: float | Missing | None = field(default=None, init=False)
 
-    history: Optional[CashFlowHistory] = None
+    history: CashFlowHistory | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
+        self.history = None
         if self.capex_ttm is not None:
             self.capex_ttm = -abs(float(self.capex_ttm))
         if self.latest_annual_capex is not None:
@@ -127,13 +153,31 @@ class CashFlow:
 
         if self.operating_cf_ttm is not None and self.capex_ttm is not None:
             self.fcf_ttm = mf.safe_sum(self.operating_cf_ttm, self.capex_ttm)
+        elif self.operating_cf_ttm is None or self.capex_ttm is None:
+            self.fcf_ttm = Missing(
+                MissingReason.INSUFFICIENT_DATA,
+                "fcf_ttm",
+                "Operating cash flow or capex was not available to derive FCF.",
+            )
         if self.oper_cf_last_year is not None and self.latest_annual_capex is not None:
             self.last_year_fcf = mf.safe_sum(
                 self.oper_cf_last_year, self.latest_annual_capex
             )
+        elif self.oper_cf_last_year is None or self.latest_annual_capex is None:
+            self.last_year_fcf = Missing(
+                MissingReason.INSUFFICIENT_DATA,
+                "last_year_fcf",
+                "Operating cash flow or capex was not available to derive last year FCF.",
+            )
         if self.oper_cf_last_quarter is not None and self.latest_quarter_capex is not None:
             self.last_quarter_fcf = mf.safe_sum(
                 self.oper_cf_last_quarter, self.latest_quarter_capex
+            )
+        elif self.oper_cf_last_quarter is None or self.latest_quarter_capex is None:
+            self.last_quarter_fcf = Missing(
+                MissingReason.INSUFFICIENT_DATA,
+                "last_quarter_fcf",
+                "Operating cash flow or capex was not available to derive last quarter FCF.",
             )
 
 
@@ -143,25 +187,42 @@ class BalanceSheet:
     Balance-sheet scalars (unchanged) plus an optional historical companion.
     """
 
-    total_debt:           Optional[float]
-    total_equity:         Optional[float]
-    cash_and_equivalents: Optional[float]
-    total_assets:         Optional[float]
-    total_liabilities:    Optional[float]
-    current_assets:       Optional[float]
-    current_liabilities:  Optional[float]
-    inventory:            Optional[float]
+    total_debt:           float | Missing | None
+    total_equity:         float | Missing | None
+    cash_and_equivalents: float | Missing | None
+    total_assets:         float | Missing | None
+    total_liabilities:    float | Missing | None
+    current_assets:       float | Missing | None
+    current_liabilities:  float | Missing | None
+    inventory:            float | Missing | None
 
-    current_ratio: Optional[float] = None
-    quick_ratio:   Optional[float] = None
+    current_ratio: float | Missing | None = field(default=None, init=False)
+    quick_ratio:   float | Missing | None = field(default=None, init=False)
 
-    history: Optional[BalanceSheetHistory] = None
+    history: BalanceSheetHistory | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        self.current_ratio = safe_div(self.current_assets, self.current_liabilities)
-        self.quick_ratio   = mf.quick_ratio(
-            self.current_assets, self.inventory, self.current_liabilities
+        self.history = None
+        self.current_ratio = self._derived_ratio(
+            safe_div(self.current_assets, self.current_liabilities),
+            "current_ratio",
         )
+        self.quick_ratio = self._derived_ratio(
+            mf.quick_ratio(
+                self.current_assets, self.inventory, self.current_liabilities
+            ),
+            "quick_ratio",
+        )
+
+    @staticmethod
+    def _derived_ratio(value: float | Missing | None, field: str) -> float | Missing:
+        if value is None:
+            return Missing(
+                MissingReason.INSUFFICIENT_DATA,
+                field,
+                f"{field} could not be computed because one or more inputs were unavailable.",
+            )
+        return value
 
 
 
@@ -170,17 +231,17 @@ class MarketData:
     current_price:       float
     shares_outstanding:  int
     market_cap:          float
-    beta:                Optional[float]
-    eps_ttm:             Optional[float]
-    pe_ttm:              Optional[float]
-    last_quarter_eps:    Optional[float]
-    last_year_eps:       Optional[float]
-    low_52_week:         Optional[float]
-    high_52_week:        Optional[float]
-    fifty_day_avg:       Optional[float]
-    two_hundred_day_avg: Optional[float]
-    volume:              Optional[int]
-    avg_volume:          Optional[int]
+    beta:                float | Missing | None
+    eps_ttm:             float | Missing | None
+    pe_ttm:              float | Missing | None
+    last_quarter_eps:    float | Missing | None
+    last_year_eps:       float | Missing | None
+    low_52_week:         float | Missing | None
+    high_52_week:        float | Missing | None
+    fifty_day_avg:       float | Missing | None
+    two_hundred_day_avg: float | Missing | None
+    volume:              int | Missing | None
+    avg_volume:          int | Missing | None
 
     def __post_init__(self) -> None:
         if self.shares_outstanding is None or self.shares_outstanding <= 0:
@@ -192,8 +253,8 @@ class MarketData:
 
 @bindable_dataclass
 class HistoricalData:
-    price_history: Optional[List[float]] = None
-    eps_history:   Optional[List[float]] = None
+    price_history: List[float] | None = None
+    eps_history:   List[float] | None = None
 
 
 
@@ -208,15 +269,15 @@ class Valuation:
     raises ``dataclasses.FrozenInstanceError`` immediately.
     """
 
-    highest_price:       Optional[float]
-    cost_of_debt:        Optional[float]
-    corporate_tax_rate:  Optional[float]
-    price_to_sales:      Optional[float]
-    price_to_book:       Optional[float]
-    median_historical_pe: Optional[float]
-    fcf_cagr:            Optional[float]
-    forward_growth_rate: Optional[float]
-    enterprise_value:    Optional[float]
+    highest_price:       float | Missing | None
+    cost_of_debt:        float | Missing | None
+    corporate_tax_rate:  float | Missing | None
+    price_to_sales:      float | Missing | None
+    price_to_book:       float | Missing | None
+    median_historical_pe: float | Missing | None
+    fcf_cagr:            float | Missing | None
+    forward_growth_rate: float | Missing | None
+    enterprise_value:    float | Missing | None
 
     @classmethod
     def build(
@@ -226,10 +287,10 @@ class Valuation:
         balance_sheet:   "BalanceSheet",
         market_data:     "MarketData",
         cash_flow:       "CashFlow",
-        historical_data: Optional["HistoricalData"] = None,
-        highest_price:   Optional[float] = None,
-        cost_of_debt:    Optional[float] = None,
-        corporate_tax_rate: Optional[float] = None,
+        historical_data: HistoricalData | None = None,
+        highest_price:   float | None = None,
+        cost_of_debt:    float | None = None,
+        corporate_tax_rate: float | None = None,
     ) -> "Valuation":
         """
         Compute and return a fully populated, immutable ``Valuation``.
@@ -258,7 +319,7 @@ class Valuation:
             balance_sheet.cash_and_equivalents,
         )
 
-        price_to_sales = safe_div(market_data.market_cap, financials.revenue_ttm)
+        price_to_sales = safe_div(market_data.market_cap, financials.revenue_ttm, "price_to_sales")
         price_to_book  = mf.price_to_book(
             price=market_data.current_price,
             total_equity=balance_sheet.total_equity,
@@ -266,7 +327,7 @@ class Valuation:
         )
 
         eps_series = historical_data.eps_history if historical_data else None
-        forward_growth_rate: Optional[float] = None
+        forward_growth_rate: float | None = None
 
         if (
             financials.history is not None
@@ -292,7 +353,7 @@ class Valuation:
                     eps_values=eps_history,
                 )
 
-        fcf_cagr: Optional[float] = None
+        fcf_cagr: float | None = None
 
         if (
             cash_flow.history is not None
@@ -331,23 +392,23 @@ class Ratios:
     Use ``Ratios.build(...)`` to construct.
     """
 
-    fcf_margin:        Optional[float] = None
-    price_to_fcf:      Optional[float] = None
-    roic:              Optional[float] = None
-    fcf_yield:         Optional[float] = None
-    debt_to_equity:    Optional[float] = None
-    ebit_margin:       Optional[float] = None
-    peg_ratio:         Optional[float] = None
-    return_on_equity:  Optional[float] = None
-    return_on_assets:  Optional[float] = None
-    price_to_sales:    Optional[float] = None
-    price_to_book:     Optional[float] = None
-    dividend_yield:    Optional[float] = None
-    payout_ratio:      Optional[float] = None
-    ev_ebit:           Optional[float] = None
-    ev_ebitda:         Optional[float] = None
-    book_value_per_share: Optional[float] = None
-    interest_coverage: Optional[float] = None
+    fcf_margin:        float | Missing | None = None
+    price_to_fcf:      float | Missing | None = None
+    roic:              float | Missing | None = None
+    fcf_yield:         float | Missing | None = None
+    debt_to_equity:    float | Missing | None = None
+    ebit_margin:       float | Missing | None = None
+    peg_ratio:         float | Missing | None = None
+    return_on_equity:  float | Missing | None = None
+    return_on_assets:  float | Missing | None = None
+    price_to_sales:    float | Missing | None = None
+    price_to_book:     float | Missing | None = None
+    dividend_yield:    float | Missing | None = None
+    payout_ratio:      float | Missing | None = None
+    ev_ebit:           float | Missing | None = None
+    ev_ebitda:         float | Missing | None = None
+    book_value_per_share: float | Missing | None = None
+    interest_coverage: float | Missing | None = None
 
     @classmethod
     def build(
@@ -356,8 +417,8 @@ class Ratios:
         financials:   "Financials",
         cash_flow:    "CashFlow",
         balance_sheet: "BalanceSheet",
-        market_data:  Optional["MarketData"] = None,
-        valuation:    Optional["Valuation"]  = None,
+        market_data:  MarketData | None = None,
+        valuation:    Valuation | None = None,
     ) -> "Ratios":
         """
         Compute and return a fully populated, immutable ``Ratios``.
@@ -381,11 +442,7 @@ class Ratios:
         corporate_tax_rate = valuation.corporate_tax_rate    if valuation   else None
         ev                 = valuation.enterprise_value      if valuation   else None
 
-        fcf_margin = (
-            safe_div(cash_flow.fcf_ttm, financials.revenue_ttm)
-            if cash_flow.fcf_ttm is not None
-            else None
-        )
+        fcf_margin = safe_div(cash_flow.fcf_ttm, financials.revenue_ttm, "fcf_margin")
         roic = mf.roic(
             financials.ebit_ttm,
             corporate_tax_rate,
@@ -403,61 +460,28 @@ class Ratios:
             if financials.ebit_ttm is not None
             else None
         )
-        price_to_fcf = (
-            safe_div(market_cap, cash_flow.fcf_ttm) if cash_flow.fcf_ttm else None
-        )
-        fcf_yield = (
-            safe_div(cash_flow.fcf_ttm, market_cap)
-            if cash_flow.fcf_ttm is not None
-            else None
-        )
-        peg_ratio = (
-            safe_div(pe_ttm, financials.net_income_growth)
-            if pe_ttm is not None and financials.net_income_growth
-            else None
-        )
-        price_to_sales = (
-            safe_div(market_cap, financials.revenue_ttm)
-            if financials.revenue_ttm
-            else None
-        )
+        price_to_fcf = safe_div(market_cap, cash_flow.fcf_ttm, "price_to_fcf")
+        fcf_yield = safe_div(cash_flow.fcf_ttm, market_cap, "fcf_yield")
+        peg_ratio = safe_div(pe_ttm, financials.net_income_growth, "peg_ratio")
+        price_to_sales = safe_div(market_cap, financials.revenue_ttm, "price_to_sales")
         price_to_book = mf.price_to_book(
             current_price, balance_sheet.total_equity, shares_outstanding
         )
-        ev_ebit = (
-            safe_div(ev, financials.ebit_ttm)
-            if ev is not None and financials.ebit_ttm
-            else None
-        )
-        ev_ebitda = (
-            safe_div(ev, financials.ebitda_ttm)
-            if ev is not None and financials.ebitda_ttm
-            else None
-        )
-        return_on_equity = (
-            safe_div(financials.net_income_ttm, balance_sheet.total_equity)
-            if balance_sheet.total_equity
-            else None
-        )
-        return_on_assets = (
-            safe_div(financials.net_income_ttm, balance_sheet.total_assets)
-            if balance_sheet.total_assets
-            else None
-        )
+        ev_ebit = safe_div(ev, financials.ebit_ttm, "ev_ebit")
+        ev_ebitda = safe_div(ev, financials.ebitda_ttm, "ev_ebitda")
+        return_on_equity = safe_div(financials.net_income_ttm, balance_sheet.total_equity, "return_on_equity")
+        return_on_assets = safe_div(financials.net_income_ttm, balance_sheet.total_assets, "return_on_assets")
         dividend_yield = mf.dividend_yield(
             cash_flow.dividends_paid_ttm, shares_outstanding, current_price
         )
         payout_ratio = mf.payout_ratio(
             cash_flow.dividends_paid_ttm, financials.net_income_ttm
         )
-        debt_to_equity = (
-            safe_div(balance_sheet.total_debt, balance_sheet.total_equity)
-            if balance_sheet.total_equity
-            else None
-        )
+        debt_to_equity = safe_div(balance_sheet.total_debt, balance_sheet.total_equity, "debt_to_equity")
         book_value_per_share = safe_div(
             balance_sheet.total_equity,
             float(shares_outstanding) if shares_outstanding is not None else None,
+            "book_value_per_share",
         )
 
         return cls(
@@ -509,8 +533,8 @@ class StockMetrics:
     balance_sheet:  BalanceSheet
     market_data:    MarketData
     valuation:      Valuation
-    historical_data: Optional[HistoricalData] = None
-    ratios:          Optional[Ratios]         = None
+    historical_data: HistoricalData | None = None
+    ratios:          Ratios | None = None
 
     def __post_init__(self) -> None:
         self._rebuild_derived()
