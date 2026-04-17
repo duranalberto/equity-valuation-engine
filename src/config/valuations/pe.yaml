@@ -1,0 +1,30 @@
+# P/E Valuation — sector-specific default parameters
+#
+# All values are decimals (e.g. 0.25 = 25 %).
+# Keys must match domain.core.enums.Sectors values exactly.
+
+margin_of_safety:
+  basic-materials:        0.35
+  communication-services: 0.25
+  consumer-cyclical:      0.30
+  consumer-defensive:     0.20
+  energy:                 0.35
+  financial-services:     0.25
+  healthcare:             0.20
+  industrials:            0.25
+  real-estate:            0.30
+  technology:             0.25
+  utilities:              0.20
+
+discount_rate:
+  basic-materials:        0.095
+  communication-services: 0.090
+  consumer-cyclical:      0.100
+  consumer-defensive:     0.085
+  energy:                 0.105
+  financial-services:     0.090
+  healthcare:             0.088
+  industrials:            0.095
+  real-estate:            0.090
+  technology:             0.100
+  utilities:              0.080

@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 
+from config.config_loader import load_validator_config
 from domain.core.enums import Sectors
 from domain.metrics.stock import StockMetrics
 from domain.valuation.policies import (
@@ -9,45 +10,7 @@ from domain.valuation.policies import (
     ValuationCheckResult,
 )
 
-_BETA_WARNING_THRESHOLD: dict = {
-    Sectors.BASIC_MATERIALS:        1.8,
-    Sectors.COMMUNICATION_SERVICES: 1.8,
-    Sectors.CONSUMER_CYCLICAL:      2.0,
-    Sectors.CONSUMER_DEFENSIVE:     1.4,
-    Sectors.ENERGY:                 1.8,
-    Sectors.FINANCIAL_SERVICES:     1.8,
-    Sectors.HEALTHCARE:             1.6,
-    Sectors.INDUSTRIALS:            1.8,
-    Sectors.REAL_ESTATE:            1.6,
-    Sectors.TECHNOLOGY:             2.2,
-    Sectors.UTILITIES:              1.2,
-}
-_COST_OF_DEBT_CRITICAL_THRESHOLD: dict = {
-    Sectors.BASIC_MATERIALS:        0.18,
-    Sectors.COMMUNICATION_SERVICES: 0.16,
-    Sectors.CONSUMER_CYCLICAL:      0.18,
-    Sectors.CONSUMER_DEFENSIVE:     0.14,
-    Sectors.ENERGY:                 0.20,
-    Sectors.FINANCIAL_SERVICES:     0.16,
-    Sectors.HEALTHCARE:             0.14,
-    Sectors.INDUSTRIALS:            0.16,
-    Sectors.REAL_ESTATE:            0.18,
-    Sectors.TECHNOLOGY:             0.14,
-    Sectors.UTILITIES:              0.16,
-}
-_MARKET_CAP_WARNING_THRESHOLD: dict = {
-    Sectors.BASIC_MATERIALS:        500_000_000,
-    Sectors.COMMUNICATION_SERVICES: 500_000_000,
-    Sectors.CONSUMER_CYCLICAL:      500_000_000,
-    Sectors.CONSUMER_DEFENSIVE:     300_000_000,
-    Sectors.ENERGY:                 500_000_000,
-    Sectors.FINANCIAL_SERVICES:     500_000_000,
-    Sectors.HEALTHCARE:             300_000_000,
-    Sectors.INDUSTRIALS:            500_000_000,
-    Sectors.REAL_ESTATE:            200_000_000,
-    Sectors.TECHNOLOGY:             500_000_000,
-    Sectors.UTILITIES:              300_000_000,
-}
+_cfg = load_validator_config("dcf")
 
 
 def _sector(stock_metrics: StockMetrics) -> Optional[Sectors]:
@@ -57,7 +20,7 @@ def _sector(stock_metrics: StockMetrics) -> Optional[Sectors]:
 class DCFChecker(ValuationChecker):
 
     CRITICAL_WEIGHT = 3
-    WARNING_WEIGHT = 1
+    WARNING_WEIGHT  = 1
 
     def __init__(self, stock_metrics: StockMetrics):
         self._metrics = stock_metrics
@@ -78,19 +41,18 @@ class DCFChecker(ValuationChecker):
     def _interpret_score(self) -> Tuple[bool, str]:
         score = self._score
         if score == 0:
-            return True, "Perfectly suitable for DCF."
-        elif 1 <= score <= 5:
-            return True, "Minor warnings, generally suitable for DCF."
-        elif 6 <= score <= 10:
+            return True,  "Perfectly suitable for DCF."
+        if 1 <= score <= 5:
+            return True,  "Minor warnings, generally suitable for DCF."
+        if 6 <= score <= 10:
             return False, "Moderate concerns, use DCF with caution."
-        else:
-            return False, "Significant risk, DCF may be unreliable."
+        return False, "Significant risk, DCF may be unreliable."
 
     def _check_free_cash_flow(self):
         sector = _sector(self._metrics)
-        fcf_ttm = self._metrics.cash_flow.fcf_ttm
+        fcf_ttm          = self._metrics.cash_flow.fcf_ttm
         last_quarter_fcf = self._metrics.cash_flow.last_quarter_fcf
-        last_year_fcf = self._metrics.cash_flow.last_year_fcf
+        last_year_fcf    = self._metrics.cash_flow.last_year_fcf
 
         fcf_negative_severity = (
             FactorSeverity.WARNING
@@ -135,17 +97,9 @@ class DCFChecker(ValuationChecker):
                 last_year_fcf,
             )
 
-
     def _check_profitability(self):
-        """
-        Check EPS, net income, and operating cash flow for DCF suitability.
-
-        All three fields are ``Optional[float]`` on their domain models.
-        Each is explicitly tested for ``None`` before any numeric comparison
-        to avoid a ``TypeError`` at runtime.
-        """
-        eps_ttm = self._metrics.market_data.eps_ttm if self._metrics.market_data else None
-        net_income_ttm = self._metrics.financials.net_income_ttm
+        eps_ttm         = self._metrics.market_data.eps_ttm if self._metrics.market_data else None
+        net_income_ttm  = self._metrics.financials.net_income_ttm
         operating_cf_ttm = self._metrics.cash_flow.operating_cf_ttm
 
         if eps_ttm is None or eps_ttm <= 0:
@@ -185,12 +139,12 @@ class DCFChecker(ValuationChecker):
             )
 
     def _check_risk_and_stability(self):
-        sector = _sector(self._metrics)
+        sector     = _sector(self._metrics)
         market_data = self._metrics.market_data
-        valuation = self._metrics.valuation
+        valuation  = self._metrics.valuation
 
-        cost_of_debt = valuation.cost_of_debt if valuation else None
-        cod_threshold = _COST_OF_DEBT_CRITICAL_THRESHOLD.get(sector, 0.20)
+        cost_of_debt  = valuation.cost_of_debt if valuation else None
+        cod_threshold = _cfg.get_float("cost_of_debt_critical", sector, default=0.20)
         if cost_of_debt is not None and cost_of_debt > cod_threshold:
             self._add_factor(
                 "High Cost of Debt",
@@ -212,8 +166,8 @@ class DCFChecker(ValuationChecker):
                 tax_rate,
             )
 
-        beta = market_data.beta if market_data else None
-        beta_threshold = _BETA_WARNING_THRESHOLD.get(sector, 2.0)
+        beta           = market_data.beta if market_data else None
+        beta_threshold = _cfg.get_float("beta_warning", sector, default=2.0)
         if beta is not None and beta > beta_threshold:
             self._add_factor(
                 "High Beta",
@@ -226,8 +180,8 @@ class DCFChecker(ValuationChecker):
                 beta,
             )
 
-        market_cap = market_data.market_cap if market_data else None
-        cap_threshold = _MARKET_CAP_WARNING_THRESHOLD.get(sector, 500_000_000)
+        market_cap    = market_data.market_cap if market_data else None
+        cap_threshold = _cfg.get_int("market_cap_warning", sector, default=500_000_000)
         if market_cap is not None and market_cap < cap_threshold:
             self._add_factor(
                 "Small Market Cap",
@@ -242,7 +196,7 @@ class DCFChecker(ValuationChecker):
 
     def _check_growth_stage(self):
         revenue_growth_rate = self._metrics.financials.revenue_growth_rate
-        net_income_ttm = self._metrics.financials.net_income_ttm
+        net_income_ttm      = self._metrics.financials.net_income_ttm
 
         if (
             revenue_growth_rate is not None

@@ -1,0 +1,56 @@
+# DCF Valuation — sector-specific default parameters
+#
+# All values are decimals (e.g. 0.30 = 30 %).
+# Keys must match domain.core.enums.Sectors values exactly.
+
+margin_of_safety:
+  basic-materials:        0.30
+  communication-services: 0.25
+  consumer-cyclical:      0.30
+  consumer-defensive:     0.20
+  energy:                 0.35
+  financial-services:     0.25
+  healthcare:             0.20
+  industrials:            0.25
+  real-estate:            0.30
+  technology:             0.30
+  utilities:              0.20
+
+risk_free_rate:
+  basic-materials:        0.040
+  communication-services: 0.040
+  consumer-cyclical:      0.040
+  consumer-defensive:     0.038
+  energy:                 0.042
+  financial-services:     0.040
+  healthcare:             0.038
+  industrials:            0.040
+  real-estate:            0.043
+  technology:             0.040
+  utilities:              0.038
+
+market_risk_premium:
+  basic-materials:        0.055
+  communication-services: 0.060
+  consumer-cyclical:      0.060
+  consumer-defensive:     0.050
+  energy:                 0.060
+  financial-services:     0.055
+  healthcare:             0.052
+  industrials:            0.055
+  real-estate:            0.057
+  technology:             0.060
+  utilities:              0.050
+
+terminal_growth_rate:
+  basic-materials:        0.020
+  communication-services: 0.020
+  consumer-cyclical:      0.020
+  consumer-defensive:     0.022
+  energy:                 0.018
+  financial-services:     0.020
+  healthcare:             0.022
+  industrials:            0.020
+  real-estate:            0.018
+  technology:             0.022
+  utilities:              0.018

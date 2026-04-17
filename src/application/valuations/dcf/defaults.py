@@ -1,62 +1,9 @@
+from config.config_loader import load_valuation_config
 from domain.core.enums import Sectors
 from domain.metrics.stock import StockMetrics
 from domain.valuation.models.dcf import DCFParameters
 
-DCF_MARGIN_OF_SAFETY = {
-    Sectors.BASIC_MATERIALS: 0.30,
-    Sectors.COMMUNICATION_SERVICES: 0.25,
-    Sectors.CONSUMER_CYCLICAL: 0.30,
-    Sectors.CONSUMER_DEFENSIVE: 0.20,
-    Sectors.ENERGY: 0.35,
-    Sectors.FINANCIAL_SERVICES: 0.25,
-    Sectors.HEALTHCARE: 0.20,
-    Sectors.INDUSTRIALS: 0.25,
-    Sectors.REAL_ESTATE: 0.30,
-    Sectors.TECHNOLOGY: 0.30,
-    Sectors.UTILITIES: 0.20,
-}
-
-DCF_RISK_FREE_RATE = {
-    Sectors.BASIC_MATERIALS: 0.040,
-    Sectors.COMMUNICATION_SERVICES: 0.040,
-    Sectors.CONSUMER_CYCLICAL: 0.040,
-    Sectors.CONSUMER_DEFENSIVE: 0.038,
-    Sectors.ENERGY: 0.042,
-    Sectors.FINANCIAL_SERVICES: 0.040,
-    Sectors.HEALTHCARE: 0.038,
-    Sectors.INDUSTRIALS: 0.040,
-    Sectors.REAL_ESTATE: 0.043,
-    Sectors.TECHNOLOGY: 0.040,
-    Sectors.UTILITIES: 0.038,
-}
-
-DCF_MARKET_RISK_PREMIUM = {
-    Sectors.BASIC_MATERIALS: 0.055,
-    Sectors.COMMUNICATION_SERVICES: 0.060,
-    Sectors.CONSUMER_CYCLICAL: 0.060,
-    Sectors.CONSUMER_DEFENSIVE: 0.050,
-    Sectors.ENERGY: 0.060,
-    Sectors.FINANCIAL_SERVICES: 0.055,
-    Sectors.HEALTHCARE: 0.052,
-    Sectors.INDUSTRIALS: 0.055,
-    Sectors.REAL_ESTATE: 0.057,
-    Sectors.TECHNOLOGY: 0.060,
-    Sectors.UTILITIES: 0.050,
-}
-
-DCF_TERMINAL_GROWTH_RATE = {
-    Sectors.BASIC_MATERIALS: 0.020,
-    Sectors.COMMUNICATION_SERVICES: 0.020,
-    Sectors.CONSUMER_CYCLICAL: 0.020,
-    Sectors.CONSUMER_DEFENSIVE: 0.022,
-    Sectors.ENERGY: 0.018,
-    Sectors.FINANCIAL_SERVICES: 0.020,
-    Sectors.HEALTHCARE: 0.022,
-    Sectors.INDUSTRIALS: 0.020,
-    Sectors.REAL_ESTATE: 0.018,
-    Sectors.TECHNOLOGY: 0.022,
-    Sectors.UTILITIES: 0.018,
-}
+_cfg = load_valuation_config("dcf")
 
 
 def get_params(
@@ -66,9 +13,9 @@ def get_params(
     sector: Sectors = stock_metrics.profile.sector
 
     return DCFParameters(
-        margin_of_safety=DCF_MARGIN_OF_SAFETY.get(sector, 0.25),
-        risk_free_rate=DCF_RISK_FREE_RATE.get(sector, 0.04),
-        market_risk_premium=DCF_MARKET_RISK_PREMIUM.get(sector, 0.055),
-        terminal_growth_rate=DCF_TERMINAL_GROWTH_RATE.get(sector, 0.02),
+        margin_of_safety=_cfg.get_float("margin_of_safety",    sector, default=0.25),
+        risk_free_rate=_cfg.get_float("risk_free_rate",         sector, default=0.04),
+        market_risk_premium=_cfg.get_float("market_risk_premium", sector, default=0.055),
+        terminal_growth_rate=_cfg.get_float("terminal_growth_rate", sector, default=0.02),
         projection_years=projection_years,
     )

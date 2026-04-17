@@ -1,0 +1,30 @@
+# ROE Valuation — sector-specific default parameters
+#
+# All values are decimals (e.g. 0.25 = 25 %).
+# Keys must match domain.core.enums.Sectors values exactly.
+
+margin_of_safety:
+  basic-materials:        0.35
+  communication-services: 0.25
+  consumer-cyclical:      0.30
+  consumer-defensive:     0.20
+  energy:                 0.40
+  financial-services:     0.30
+  healthcare:             0.20
+  industrials:            0.25
+  real-estate:            0.35
+  technology:             0.30
+  utilities:              0.15
+
+discount_rate:
+  basic-materials:        0.105
+  communication-services: 0.095
+  consumer-cyclical:      0.110
+  consumer-defensive:     0.090
+  energy:                 0.115
+  financial-services:     0.100
+  healthcare:             0.095
+  industrials:            0.100
+  real-estate:            0.095
+  technology:             0.110
+  utilities:              0.085

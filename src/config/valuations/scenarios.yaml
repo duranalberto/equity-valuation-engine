@@ -1,0 +1,85 @@
+# Growth scenario multipliers and per-scenario volatility bands
+#
+# scenario_multipliers: scales the derived base-growth rate for each scenario.
+#   Base is always 1.0 (no scaling). Bear and Bull are sector-differentiated.
+#
+# scenario_volatility: gaussian noise width added to each annual projection.
+#   Higher volatility → wider year-to-year dispersion within a scenario.
+#
+# Keys must match domain.core.enums.Sectors values exactly.
+
+scenario_multipliers:
+  Bear:
+    basic-materials:        0.80
+    communication-services: 0.80
+    consumer-cyclical:      0.80
+    consumer-defensive:     0.85
+    energy:                 0.75
+    financial-services:     0.80
+    healthcare:             0.85
+    industrials:            0.80
+    real-estate:            0.80
+    technology:             0.80
+    utilities:              0.85
+  Base:
+    basic-materials:        1.0
+    communication-services: 1.0
+    consumer-cyclical:      1.0
+    consumer-defensive:     1.0
+    energy:                 1.0
+    financial-services:     1.0
+    healthcare:             1.0
+    industrials:            1.0
+    real-estate:            1.0
+    technology:             1.0
+    utilities:              1.0
+  Bull:
+    basic-materials:        1.20
+    communication-services: 1.20
+    consumer-cyclical:      1.20
+    consumer-defensive:     1.15
+    energy:                 1.20
+    financial-services:     1.20
+    healthcare:             1.15
+    industrials:            1.20
+    real-estate:            1.15
+    technology:             1.20
+    utilities:              1.10
+
+scenario_volatility:
+  Bear:
+    basic-materials:        0.010
+    communication-services: 0.010
+    consumer-cyclical:      0.015
+    consumer-defensive:     0.010
+    energy:                 0.015
+    financial-services:     0.010
+    healthcare:             0.010
+    industrials:            0.010
+    real-estate:            0.010
+    technology:             0.020
+    utilities:              0.010
+  Base:
+    basic-materials:        0.005
+    communication-services: 0.005
+    consumer-cyclical:      0.005
+    consumer-defensive:     0.005
+    energy:                 0.007
+    financial-services:     0.005
+    healthcare:             0.005
+    industrials:            0.005
+    real-estate:            0.005
+    technology:             0.010
+    utilities:              0.003
+  Bull:
+    basic-materials:        0.020
+    communication-services: 0.020
+    consumer-cyclical:      0.020
+    consumer-defensive:     0.015
+    energy:                 0.020
+    financial-services:     0.020
+    healthcare:             0.015
+    industrials:            0.020
+    real-estate:            0.015
+    technology:             0.025
+    utilities:              0.010

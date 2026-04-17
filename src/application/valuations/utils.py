@@ -1,59 +1,19 @@
 import hashlib
 import logging
-import random
 import math
+import random
 from datetime import date
 from typing import Dict, List, Optional
 
-from domain.core.enums import Sectors
+from config.config_loader import load_valuation_config
 from domain.metrics.stock import StockMetrics
 
 logger = logging.getLogger(__name__)
 
-SECTOR_SCENARIO_MULTIPLIERS = {
-    "Bear": {
-        Sectors.BASIC_MATERIALS: 0.80, Sectors.COMMUNICATION_SERVICES: 0.80,
-        Sectors.CONSUMER_CYCLICAL: 0.80, Sectors.CONSUMER_DEFENSIVE: 0.85,
-        Sectors.ENERGY: 0.75, Sectors.FINANCIAL_SERVICES: 0.80,
-        Sectors.HEALTHCARE: 0.85, Sectors.INDUSTRIALS: 0.80,
-        Sectors.REAL_ESTATE: 0.80, Sectors.TECHNOLOGY: 0.80, Sectors.UTILITIES: 0.85,
-    },
-    "Base": {s: 1.0 for s in Sectors},
-    "Bull": {
-        Sectors.BASIC_MATERIALS: 1.20, Sectors.COMMUNICATION_SERVICES: 1.20,
-        Sectors.CONSUMER_CYCLICAL: 1.20, Sectors.CONSUMER_DEFENSIVE: 1.15,
-        Sectors.ENERGY: 1.20, Sectors.FINANCIAL_SERVICES: 1.20,
-        Sectors.HEALTHCARE: 1.15, Sectors.INDUSTRIALS: 1.20,
-        Sectors.REAL_ESTATE: 1.15, Sectors.TECHNOLOGY: 1.20, Sectors.UTILITIES: 1.10,
-    },
-}
+_scenarios_cfg = load_valuation_config("scenarios")
 
-SECTOR_VOLATILITY = {
-    "Bear": {
-        Sectors.BASIC_MATERIALS: 0.010, Sectors.COMMUNICATION_SERVICES: 0.010,
-        Sectors.CONSUMER_CYCLICAL: 0.015, Sectors.CONSUMER_DEFENSIVE: 0.010,
-        Sectors.ENERGY: 0.015, Sectors.FINANCIAL_SERVICES: 0.010,
-        Sectors.HEALTHCARE: 0.010, Sectors.INDUSTRIALS: 0.010,
-        Sectors.REAL_ESTATE: 0.010, Sectors.TECHNOLOGY: 0.020, Sectors.UTILITIES: 0.010,
-    },
-    "Base": {
-        Sectors.BASIC_MATERIALS: 0.005, Sectors.COMMUNICATION_SERVICES: 0.005,
-        Sectors.CONSUMER_CYCLICAL: 0.005, Sectors.CONSUMER_DEFENSIVE: 0.005,
-        Sectors.ENERGY: 0.007, Sectors.FINANCIAL_SERVICES: 0.005,
-        Sectors.HEALTHCARE: 0.005, Sectors.INDUSTRIALS: 0.005,
-        Sectors.REAL_ESTATE: 0.005, Sectors.TECHNOLOGY: 0.010, Sectors.UTILITIES: 0.003,
-    },
-    "Bull": {
-        Sectors.BASIC_MATERIALS: 0.020, Sectors.COMMUNICATION_SERVICES: 0.020,
-        Sectors.CONSUMER_CYCLICAL: 0.020, Sectors.CONSUMER_DEFENSIVE: 0.015,
-        Sectors.ENERGY: 0.020, Sectors.FINANCIAL_SERVICES: 0.020,
-        Sectors.HEALTHCARE: 0.015, Sectors.INDUSTRIALS: 0.020,
-        Sectors.REAL_ESTATE: 0.015, Sectors.TECHNOLOGY: 0.025, Sectors.UTILITIES: 0.010,
-    },
-}
-
-_GROWTH_FLOOR   = -0.20
-_GROWTH_CEILING =  0.50
+_GROWTH_FLOOR    = -0.20
+_GROWTH_CEILING  =  0.50
 _FALLBACK_BASE_GROWTH = 0.04
 
 
@@ -68,7 +28,7 @@ def _default_seed(ticker: str) -> int:
       artefacts while keeping intra-day runs perfectly reproducible).
     - Different tickers on the same day never collide.
     """
-    key = f"{ticker.upper()}:{date.today().isoformat()}"
+    key    = f"{ticker.upper()}:{date.today().isoformat()}"
     digest = hashlib.sha256(key.encode()).hexdigest()
     return int(digest[:16], 16)
 
@@ -103,7 +63,7 @@ def _derive_base_growth(stock_metrics: StockMetrics) -> float:
         )
         return _FALLBACK_BASE_GROWTH
 
-    base = sum(candidates) / len(candidates)
+    base    = sum(candidates) / len(candidates)
     clamped = max(_GROWTH_FLOOR, min(_GROWTH_CEILING, base))
     if clamped != base:
         logger.debug(
@@ -123,42 +83,36 @@ def generate_growth_scenarios(
     """
     Generate Bear / Base / Bull growth-rate lists for a given ticker.
 
+    Scenario multipliers and volatility bands are loaded from
+    ``config/valuations/scenarios.yaml`` rather than being hardcoded.
+
     Reproducibility
     ---------------
     By default (``stochastic=False``) the seed is deterministically derived
-    from the ticker symbol and today's date via :func:`_default_seed`.  This
-    guarantees that every call for the same ticker on the same calendar day
-    returns identical results, while still allowing the natural day-over-day
-    drift that reflects updated market data.
+    from the ticker symbol and today's date via :func:`_default_seed`.
 
     Pass ``stochastic=True`` (and optionally an explicit ``random_seed``) to
     opt into non-deterministic mode, e.g. for Monte Carlo simulations.
-
-    Parameters
-    ----------
-    stock_metrics   : fully-built ``StockMetrics`` aggregate.
-    projection_years: number of annual growth rates to generate.
-    margin_of_safety: Bear multiplier reduction / Bull multiplier boost.
-    random_seed     : explicit seed override; takes priority over the
-                      auto-derived seed when provided.
-    stochastic      : when ``True`` and ``random_seed`` is ``None``, use
-                      ``random.Random()`` with no seed (OS entropy).
     """
     if random_seed is not None:
         seed = random_seed
     elif stochastic:
-        seed = None  # Python's random.Random(None) uses OS entropy
+        seed = None
     else:
         seed = _default_seed(stock_metrics.profile.ticker)
 
-    rng = random.Random(seed)
-    sector: Sectors = stock_metrics.profile.sector
+    rng    = random.Random(seed)
+    sector = stock_metrics.profile.sector
     base_growth = _derive_base_growth(stock_metrics)
 
     scenarios: Dict[str, List[float]] = {}
     for scenario_name in ("Bear", "Base", "Bull"):
-        multiplier = SECTOR_SCENARIO_MULTIPLIERS[scenario_name].get(sector, 1.0)
-        volatility = SECTOR_VOLATILITY[scenario_name].get(sector, 0.005)
+        multiplier = _scenarios_cfg.get_nested_float(
+            "scenario_multipliers", scenario_name, sector, default=1.0
+        )
+        volatility = _scenarios_cfg.get_nested_float(
+            "scenario_volatility", scenario_name, sector, default=0.005
+        )
 
         if scenario_name == "Bear":
             multiplier *= (1.0 - margin_of_safety)
@@ -168,7 +122,7 @@ def generate_growth_scenarios(
         growth_list: List[float] = []
         for _ in range(projection_years):
             noise = rng.uniform(-volatility, volatility)
-            raw = base_growth * multiplier + noise
+            raw   = base_growth * multiplier + noise
             growth_list.append(max(_GROWTH_FLOOR, min(_GROWTH_CEILING, raw)))
 
         scenarios[scenario_name] = growth_list
