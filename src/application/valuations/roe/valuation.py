@@ -49,14 +49,14 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
         raise ValueError("ratios must be available for ROE valuation.")
 
     return_on_equity = ratios.return_on_equity
-    if return_on_equity is None:
-        raise ValueError("return_on_equity must be available for ROE valuation.")
+    if return_on_equity == 0.0:
+        raise ValueError("return_on_equity must be non-zero for ROE valuation.")
 
-    year_n_income = return_on_equity * equity_per_share_progression[-1]
-    required_value = year_n_income / pm.discount_rate
+    year_n_income      = return_on_equity * equity_per_share_progression[-1]
+    required_value     = year_n_income / pm.discount_rate
     npv_required_value = required_value / ((1 + pm.discount_rate) ** pm.projection_years)
-    npv_dividends = sum(npv_dividend_progression)
-    intrinsic_value = npv_required_value + npv_dividends
+    npv_dividends      = sum(npv_dividend_progression)
+    intrinsic_value    = npv_required_value + npv_dividends
 
     valuation_status = evaluate_price(
         current_price=sm.market_data.current_price,
@@ -87,11 +87,9 @@ def execute_roe_scenarios(
     if params is None:
         params = get_params(stock_metrics)
 
-    raw_dividends = stock_metrics.cash_flow.dividends_paid_ttm
-    if raw_dividends is None:
-        raw_dividends = 0.0
-    if raw_dividends < 0:
-        raw_dividends = abs(raw_dividends)
+    # dividends_paid_ttm is float = 0.0 — no None guard needed.
+    # abs() normalises the sign (yfinance sometimes returns negative outflows).
+    raw_dividends = abs(stock_metrics.cash_flow.dividends_paid_ttm)
 
     dividend_rate_per_share = safe_div(
         raw_dividends,

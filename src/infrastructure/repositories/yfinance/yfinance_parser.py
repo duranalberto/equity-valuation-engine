@@ -1,356 +1,154 @@
-"""
-YfinanceParser — the parsing/transformation half of the old YfinanceDataLoader.
-
-Responsibilities
-----------------
-* Accept a ``RawTickerData`` (produced by ``YfinanceFetcher`` or a test fixture).
-* Normalise all six statement DataFrames exactly once at construction.
-* Implement the full ``FinancialRepository`` protocol.
-* Apply FX conversion where appropriate.
-* Never call ``yf.Ticker`` or any network API.
-
-Testing
--------
-Construct with ``RawTickerData`` built from fixture DataFrames:
-
-    raw = empty_raw("AAPL")
-    # override relevant DataFrames ...
-    parser = YfinanceParser(raw)
-    result = parser.get_ttm_from_quarters(some_field)
-    assert result == expected
-
-No mocking required — the parser is a pure function of its input.
-"""
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import List, Optional
 
-import pandas as pd
-
-from infrastructure.repositories.financial_repository import (
-    BaseField, EnumField, FinancialField, FinancialRepository,
-    LabelField, Period, Statement,
-)
-from infrastructure.mappers.stock_metrics_mapper import BaseStockMetricsMapper
-from infrastructure.currency import get_rate_to_usd
-
-from .mappers import (
-    StockMetricsMapper,
-    sector_mapper,
-    CurrencyType,
-    CurrencyField,
-    YfFinancialField,
-    YfLabelField,
-    FINANCIAL_CURRENCY_LABEL,
-    TRADING_CURRENCY_LABEL,
-    SECTOR_LABEL,
-)
-from .dataframe_utils import (
-    normalize_df_index,
-    get_ordered_numeric_series,
-    calculate_ttm_from_series,
-)
-from .raw_ticker_data import RawTickerData
-from .value_objects import DataQuality, EarningsHistory, PriceHistory
+from .mappers.common_constants import INCOME_STMT_LABELS, INFO_LABELS
+from .mappers.enum_mappers import map_sector
+from .yfinance_fetcher import YfinanceFetcher
 
 logger = logging.getLogger(__name__)
 
 
 class YfinanceParser:
     """
-    Parse a ``RawTickerData`` and expose it through ``FinancialRepository``.
+    Higher-level extraction methods for info-dict and price/EPS data.
 
-    All six statement DataFrames are normalised once in ``__init__``.
-    Every subsequent lookup operates on the cached, normalised copies —
-    no repeated normalisation per field access.
+    This class handles two categories of data that cannot be served by the
+    generic ``dataframe_utils`` path:
+
+    1. **Info-dict fields** — values read from ``ticker.info`` (company name,
+       sector, current price, shares outstanding, etc.) that may require
+       fallback logic between ``fast_info`` and ``info`` sources.
+
+    2. **Price and EPS history** — computed from the 5-year price history
+       DataFrame and annual income-statement series respectively.
+
+    All financial statement data (income statement, balance sheet, cash flow)
+    is routed directly through ``YfinanceDataLoader`` → ``dataframe_utils``
+    without passing through this class.
     """
 
-    mapper: BaseStockMetricsMapper
-
-    def __init__(self, raw: RawTickerData) -> None:
-        if not isinstance(raw, RawTickerData):
-            raise TypeError(
-                f"YfinanceParser requires a RawTickerData, got {type(raw).__name__}"
-            )
-
-        self._raw = raw
-        self.mapper = StockMetricsMapper()
-
-        fin_currency   = raw.info.get(FINANCIAL_CURRENCY_LABEL)
-        trade_currency = raw.info.get(TRADING_CURRENCY_LABEL)
-        self._financial_rate: float = get_rate_to_usd(fin_currency)
-        self._trading_rate:   float = get_rate_to_usd(trade_currency)
-
-        self._financials: Dict[Period, Dict[Statement, pd.DataFrame]] = {
-            Period.ANNUAL: {
-                Statement.INCOME:        self._norm(raw.annual_income),
-                Statement.CASHFLOW:      self._norm(raw.annual_cashflow),
-                Statement.BALANCE_SHEET: self._norm(raw.annual_balance_sheet),
-            },
-            Period.QUARTERLY: {
-                Statement.INCOME:        self._norm(raw.quarterly_income),
-                Statement.CASHFLOW:      self._norm(raw.quarterly_cashflow),
-                Statement.BALANCE_SHEET: self._norm(raw.quarterly_balance_sheet),
-            },
-        }
-
-        self._earnings:      EarningsHistory       = self._build_earnings_history()
-        self._price_history: Optional[PriceHistory] = self._build_price_history()
-
-        self._eps_quality: DataQuality       = self._earnings.quality
-        self._eps_history: Optional[List[float]] = (
-            self._earnings.eps_values or None
-        )
+    def __init__(self, fetcher: YfinanceFetcher) -> None:
+        self._f = fetcher
 
 
-    def get_label(self, field: BaseField) -> Optional[Any]:
-        if isinstance(field, EnumField):
-            value = self._raw.info.get(field.label)
-            if field.label == SECTOR_LABEL and isinstance(value, str):
-                normalised = value.lower().replace(" ", "-")
-                return sector_mapper.get_key_from_value(normalised)
-            return value
+    def ticker(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["ticker"])
 
-        if isinstance(field, LabelField):
-            yf_field = cast(YfLabelField, field)
-            for label_str in yf_field.labels:
-                value = self._raw.info.get(label_str)
-                if value is not None:
-                    if isinstance(yf_field, CurrencyField):
-                        if isinstance(value, (int, float)):
-                            return value * self._get_rate(yf_field)
-                    return value
+    def company_name(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["company_name"])
+
+    def sector(self):
+        raw = self._f.get_info(INFO_LABELS["sector"])
+        return map_sector(raw) if raw else None
+
+    def industry(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["industry"])
+
+    def country(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["country"])
+
+    def financial_currency(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["financial_currency"])
+
+    def trading_currency(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["trading_currency"])
+
+    def exchange(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["exchange"])
+
+    def quote_type(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["quote_type"])
+
+    def website(self) -> Optional[str]:
+        return self._f.get_info(INFO_LABELS["website"])
+
+    def current_price(self) -> Optional[float]:
+        price = self._f.get_fast_info("last_price")
+        if price is None:
+            price = self._f.get_info(INFO_LABELS["current_price"])
+        return float(price) if price else None
+
+    def shares_outstanding(self) -> Optional[int]:
+        raw = self._f.get_fast_info("shares")
+        if raw is None:
+            raw = self._f.get_info(INFO_LABELS["shares_outstanding"])
+        return int(raw) if raw else None
+
+    def market_cap(self) -> Optional[float]:
+        raw = self._f.get_fast_info("market_cap")
+        if raw is None:
+            raw = self._f.get_info(INFO_LABELS["market_cap"])
+        return float(raw) if raw else None
+
+    def beta(self) -> Optional[float]:
+        raw = self._f.get_info(INFO_LABELS["beta"])
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
             return None
 
-        return None
+    def eps_ttm(self) -> Optional[float]:
+        raw = self._f.get_info(INFO_LABELS["eps_ttm"])
+        return float(raw) if raw is not None else None
 
-    def get_ttm_from_quarters(
-        self, field: FinancialField, year_offset: int = 0
-    ) -> Optional[float]:
-        if year_offset < 0:
-            raise ValueError("year_offset cannot be negative.")
-        yf_field = cast(YfFinancialField, field)
-        df       = self._get_stmt(Period.QUARTERLY, yf_field.statement)
-        series   = get_ordered_numeric_series(df, yf_field.label)
-        if series is None:
-            return None
-        ttm = calculate_ttm_from_series(series, year_offset)
-        if ttm is None:
-            return None
-        return ttm * self._get_rate(cast(CurrencyField, yf_field))
+    def pe_ttm(self) -> Optional[float]:
+        raw = self._f.get_info(INFO_LABELS["pe_ttm"])
+        return float(raw) if raw is not None else None
 
-    def get_annual_value(
-        self, field: FinancialField, year_offset: int = 0
-    ) -> Optional[float]:
-        if year_offset < 0:
-            raise ValueError("year_offset cannot be negative.")
-        yf_field = cast(YfFinancialField, field)
-        df       = self._get_stmt(Period.ANNUAL, yf_field.statement)
-        series   = get_ordered_numeric_series(df, yf_field.label)
-        if series is None or len(series) <= year_offset:
-            return None
-        return float(series.iloc[year_offset]) * self._get_rate(
-            cast(CurrencyField, yf_field)
-        )
+    def low_52_week(self) -> Optional[float]:
+        raw = self._f.get_fast_info("year_low")
+        if raw is None:
+            raw = self._f.get_info(INFO_LABELS.get("low_52_week", "fiftyTwoWeekLow"))
+        return float(raw) if raw else None
 
-    def get_latest_numeric(self, field: FinancialField) -> Optional[float]:
-        yf_field = cast(YfFinancialField, field)
-        period   = yf_field.period if yf_field.period is not None else Period.QUARTERLY
-        df       = self._get_stmt(period, yf_field.statement)
-        series   = get_ordered_numeric_series(df, yf_field.label)
-        if series is None:
-            return None
-        return float(series.iloc[0]) * self._get_rate(cast(CurrencyField, yf_field))
+    def high_52_week(self) -> Optional[float]:
+        raw = self._f.get_fast_info("year_high")
+        if raw is None:
+            raw = self._f.get_info(INFO_LABELS.get("high_52_week", "fiftyTwoWeekHigh"))
+        return float(raw) if raw else None
+
+    def fifty_day_avg(self) -> Optional[float]:
+        raw = self._f.get_info(INFO_LABELS.get("fifty_day_avg", "fiftyDayAverage"))
+        return float(raw) if raw else None
+
+    def two_hundred_day_avg(self) -> Optional[float]:
+        raw = self._f.get_info(INFO_LABELS.get("two_hundred_day_avg", "twoHundredDayAverage"))
+        return float(raw) if raw else None
+
+    def volume(self) -> Optional[int]:
+        raw = self._f.get_fast_info("three_month_average_volume")
+        if raw is None:
+            raw = self._f.get_info(INFO_LABELS.get("volume", "volume"))
+        return int(raw) if raw else None
+
+    def avg_volume(self) -> Optional[int]:
+        raw = self._f.get_info(INFO_LABELS.get("avg_volume", "averageVolume"))
+        return int(raw) if raw else None
 
 
-    def get_series(
-        self,
-        field: FinancialField,
-        period: Optional[Period] = None,
-    ) -> Optional[List[float]]:
+    def price_history(self) -> Optional[List[float]]:
+        return self._f.price_series()
+
+    def highest_price(self) -> Optional[float]:
+        return self._f.highest_price()
+
+    def eps_history(self) -> Optional[List[float]]:
         """
-        Return all available values for a statement row as a list,
-        **oldest first**, with FX conversion applied.
+        Build a per-year EPS series from annual net-income ÷ shares-outstanding.
 
-        Resolution order for ``period``:
-            1. The ``period`` argument (explicit override).
-            2. ``field.period`` (declared on the descriptor).
-            3. ``Period.QUARTERLY`` (default).
-
-        Returns ``None`` when the row cannot be found or produces no numeric
-        values.  An empty list is never returned.
+        Uses ``income_series_annual`` from the fetcher — the only statement
+        accessor that remains live after the statement-numeric methods were
+        removed (those were bypassed by the dataframe_utils path in the loader).
         """
-        yf_field       = cast(YfFinancialField, field)
-        resolved_period = period or yf_field.period or Period.QUARTERLY
-
-        df = self._get_stmt(resolved_period, yf_field.statement)
-        series = get_ordered_numeric_series(df, yf_field.label)
-        if series is None or series.empty:
+        ni_series = self._f.income_series_annual(INCOME_STMT_LABELS["net_income"])
+        shares    = self.shares_outstanding()
+        if not ni_series or not shares:
             return None
-        
-        rate       = self._get_rate(cast(CurrencyField, yf_field))
-        raw_values = series.tolist()
-        raw_values.reverse()
-        values = [float(v) * rate for v in raw_values]
-        return values if values else None
-
-    def get_highest_price(self) -> Optional[float]:
-        return self._price_history.highest if self._price_history else None
-
-    def get_price_history(self) -> Optional[List[float]]:
-        return self._price_history.prices if self._price_history else None
-
-    def get_eps_history(self) -> Optional[List[float]]:
-        return self._eps_history
-
-    def get_eps_data_quality(self) -> DataQuality:
-        """Expose the data-quality tag for the EPS series."""
-        return self._eps_quality
-
-    def debug_financial_coverage(self) -> Dict[str, Any]:
-        debug_info: Dict[str, Any] = {}
-        for period, stmts in self._financials.items():
-            p_key = str(period.value)
-            debug_info[p_key] = {}
-            for stmt_type, df in stmts.items():
-                s_key = str(stmt_type.value)
-                if df.empty:
-                    debug_info[p_key][s_key] = {
-                        "available_fields": {},
-                        "total_fields": 0,
-                        "empty": True,
-                    }
-                    continue
-                field_info = {}
-                for idx in df.index:
-                    row = df.loc[idx]
-                    if isinstance(row, pd.DataFrame):
-                        if row.empty:
-                            continue
-                        row = row.iloc[0]
-                    numeric = pd.to_numeric(row, errors="coerce")
-                    count   = int(numeric.count())
-                    field_info[str(idx)] = {
-                        "values_available": count,
-                        "has_ttm_coverage": (
-                            count >= 4 if period == Period.QUARTERLY else None
-                        ),
-                    }
-                debug_info[p_key][s_key] = {
-                    "available_fields": field_info,
-                    "total_fields":     len(field_info),
-                    "empty":            False,
-                }
-        return debug_info
-
-    @staticmethod
-    def _norm(df: pd.DataFrame) -> pd.DataFrame:
-        """Normalise a DataFrame's index; return an empty DF if input is empty."""
-        if df is None or df.empty:
-            return pd.DataFrame()
-        return normalize_df_index(df)
-
-    def _get_stmt(self, period: Period, stmt: Statement) -> pd.DataFrame:
-        """Return the pre-normalised DataFrame for a period/statement pair."""
-        df = self._financials.get(period, {}).get(stmt)
-        return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
-
-    def _get_rate(self, field: CurrencyField) -> float:
-        match field.currency_type:
-            case CurrencyType.FINANCIAL:
-                return self._financial_rate
-            case CurrencyType.TRADING:
-                return self._trading_rate
-        return 1.0
-
-    def _build_earnings_history(self) -> EarningsHistory:
-        """
-        Build EPS history from the best available source.
-
-        Priority order
-        --------------
-        1. ``earnings_history_raw`` — direct epsActual column.
-        2. EPS row in the quarterly income statement.
-        3. Net Income / Shares Outstanding (approximation).
-
-        Design note: EPS is a per-share ratio — it must NOT be multiplied by
-        the financial FX rate.
-        """
-        eps_labels = [
-            "diluted eps", "eps", "epsactual",
-            "diluted earnings per share", "earnings per share",
-        ]
-
-        raw_eh = self._raw.earnings_history_raw
-        if raw_eh is not None and not raw_eh.empty and "epsActual" in raw_eh.columns:
-            series = pd.to_numeric(raw_eh["epsActual"], errors="coerce").dropna()
-            if not series.empty:
-                logger.debug(
-                    "%s: EPS from primary source (earnings_history), %d values.",
-                    self._raw.ticker_symbol, len(series),
-                )
-                return EarningsHistory(
-                    eps_values=series.tolist(),
-                    quality=DataQuality.DIRECT,
-                )
-
-        q_income   = self._get_stmt(Period.QUARTERLY, Statement.INCOME)
-        eps_series = get_ordered_numeric_series(q_income, eps_labels)
-        if eps_series is not None and not eps_series.empty:
-            logger.debug(
-                "%s: EPS from quarterly income statement, %d values.",
-                self._raw.ticker_symbol, len(eps_series),
-            )
-            return EarningsHistory(
-                eps_values=eps_series.tolist(),
-                quality=DataQuality.DERIVED_FROM_STATEMENT,
-            )
-
-        ni_labels = ["net income", "netincome", "net_income"]
-        ni_series = get_ordered_numeric_series(q_income, ni_labels)
-        if ni_series is not None and not ni_series.empty:
-            shares = (
-                self._raw.info.get("sharesOutstanding")
-                or self._raw.info.get("sharesDiluted")
-            )
-            if shares and isinstance(shares, (int, float)) and shares > 0:
-                logger.debug(
-                    "%s: EPS approximated as Net Income / Shares (%s).",
-                    self._raw.ticker_symbol,
-                    DataQuality.DERIVED_FROM_NET_INCOME.value,
-                )
-                eps_approx = ni_series / float(shares)
-                return EarningsHistory(
-                    eps_values=eps_approx.tolist(),
-                    quality=DataQuality.DERIVED_FROM_NET_INCOME,
-                )
-
-        logger.debug(
-            "%s: No EPS data available from any source.",
-            self._raw.ticker_symbol,
-        )
-        return EarningsHistory(eps_values=[], quality=DataQuality.MISSING)
-
-    def _build_price_history(self) -> Optional[PriceHistory]:
-        """
-        Build monthly price history (USD-converted) from the raw price DataFrame.
-        """
-        df = self._raw.price_history_raw
-        if df is None or df.empty:
-            return None
-
-        price_series = None
-        for col in ("Adj Close", "Close"):
-            if col in df.columns:
-                price_series = pd.to_numeric(df[col], errors="coerce").dropna()
-                break
-
-        if price_series is None or price_series.empty:
-            return None
-
-        converted = (price_series * self._trading_rate).tolist()
-        if not converted:
-            return None
-
-        return PriceHistory.from_series(converted)
+        from calculations.common import safe_div
+        result  = [safe_div(ni, float(shares)) for ni in ni_series]
+        cleaned = [v for v in result if v is not None]
+        return cleaned if cleaned else None

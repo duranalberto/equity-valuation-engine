@@ -1,106 +1,78 @@
 from __future__ import annotations
 
-import abc
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import List, Optional, Union
+from enum import Enum, auto
 
 from infrastructure.repositories.financial_repository import (
-    LabelField, FinancialField, Statement, Action, Period,
+    Action,
+    FinancialField,
+    LabelField,
+    Period,
 )
 
 
-class CurrencyType(Enum):
-    FINANCIAL = "financial_currency"
-    TRADING   = "trading_currency"
-    NONE      = None
-
-
-@dataclass(kw_only=True)
-class CurrencyField(abc.ABC):
-    currency_type: CurrencyType = CurrencyType.NONE
-
-
-@dataclass(kw_only=True)
-class YfLabelField(LabelField, CurrencyField):
+class Statement(Enum):
     """
-    Maps a StockMetrics field to one or more Yahoo Finance info-dict keys.
+    Identifies which financial statement a ``YfFinancialField`` belongs to.
 
-    ``label`` accepts either a plain string (single key) or a list of strings
-    (tried in order, first match wins).
+    Used by ``YfinanceDataLoader._select_df`` to route each field to the
+    correct DataFrame without scanning label-constant dictionaries at
+    call time.
     """
-    label: Union[str, List[str]]
-
-    @property
-    def labels(self) -> List[str]:
-        """Always returns a list, regardless of how ``label`` was declared."""
-        if isinstance(self.label, list):
-            return self.label
-        return [self.label]
-
-    def validate(self) -> None:
-        if not self.label:
-            raise ValueError("Label cannot be empty.")
-        if isinstance(self.label, list) and not all(self.label):
-            raise ValueError("Label list must not contain empty strings.")
+    INCOME       = auto()
+    BALANCE_SHEET = auto()
+    CASH_FLOW    = auto()
 
 
-@dataclass(kw_only=True)
-class YfFinancialField(FinancialField, CurrencyField):
+class YfLabelField(LabelField):
+    """Label field backed by the Yahoo Finance info dict."""
+    pass
+
+
+class YfFinancialField(FinancialField):
     """
-    Maps a StockMetrics scalar field to a row in a financial statement
-    DataFrame.  ``action`` must be one of the scalar actions
-    (GET_LATEST_VALUE, GET_TTM_VALUE, GET_TTM_PREV_VALUE).
-    """
-    label:     List[str]
-    statement: Statement
-    action:    Action
-    period:    Optional[Period] = None
+    Financial field backed by a Yahoo Finance statement DataFrame.
 
-    def validate(self) -> None:
-        if not isinstance(self.label, list) or not self.label:
-            raise ValueError("Labels list cannot be empty.")
-
-
-@dataclass(kw_only=True)
-class YfPerShareFinancialField(YfFinancialField):
-    """
-    Financial-statement descriptor for per-share metrics such as EPS.
-
-    These values are ratios, not currency amounts, so they must never be FX
-    converted. The invariant is enforced here rather than by convention in the
-    mapper.
+    ``statement`` declares which statement this field belongs to and is used
+    by ``YfinanceDataLoader._select_df`` for O(1) DataFrame routing.
     """
 
-    def __post_init__(self) -> None:
-        self.validate()
+    def __init__(
+        self,
+        label,
+        action: Action,
+        period: Period | None = None,
+        statement: Statement = Statement.INCOME,
+    ) -> None:
+        super().__init__(label=label, action=action, period=period)
+        self.statement = statement
 
-    def validate(self) -> None:
-        super().validate()
-        if self.currency_type is not CurrencyType.NONE:
-            raise ValueError(
-                "Per-share financial fields must use CurrencyType.NONE."
-            )
+    def __repr__(self) -> str:
+        return (
+            f"YfFinancialField(label={self.label!r}, action={self.action.name}, "
+            f"period={self.period}, statement={self.statement.name})"
+        )
 
 
-@dataclass(kw_only=True)
-class YfSeriesField(FinancialField, CurrencyField):
+class YfSeriesField(FinancialField):
     """
-    Maps a history-companion field to a row in a financial statement
-    DataFrame.  The loader always calls ``get_series()`` for this field type.
+    Historical series field.
 
-    ``action`` is fixed to ``Action.GET_SERIES`` and is set automatically;
-    do not pass it in the constructor.
-
-    ``period`` controls which DataFrame is queried (QUARTERLY or ANNUAL).
-    When omitted the loader defaults to QUARTERLY.
+    Always uses ``Action.GET_SERIES``.  ``period`` selects quarterly vs annual.
+    ``statement`` is required for correct DataFrame routing in
+    ``YfinanceDataLoader._select_df``.
     """
-    label:     List[str]
-    statement: Statement
-    period:    Optional[Period] = None
-    # action is always GET_SERIES — override the parent's required field
-    action:    Action = field(default=Action.GET_SERIES, init=False)
 
-    def validate(self) -> None:
-        if not isinstance(self.label, list) or not self.label:
-            raise ValueError("Labels list cannot be empty.")
+    def __init__(
+        self,
+        label,
+        period: Period = Period.QUARTERLY,
+        statement: Statement = Statement.INCOME,
+    ) -> None:
+        super().__init__(label=label, action=Action.GET_SERIES, period=period)
+        self.statement = statement
+
+    def __repr__(self) -> str:
+        return (
+            f"YfSeriesField(label={self.label!r}, period={self.period}, "
+            f"statement={self.statement.name})"
+        )

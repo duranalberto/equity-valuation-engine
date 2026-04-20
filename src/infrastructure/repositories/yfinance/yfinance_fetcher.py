@@ -1,106 +1,72 @@
 from __future__ import annotations
 
 import logging
-import warnings
-from typing import Any, Dict, Optional
+from typing import List, Optional, Union
 
-import pandas as pd
-import yfinance as yf
-
-from .raw_ticker_data import RawTickerData
+from .dataframe_utils import get_series
+from .value_objects import RawTickerData
 
 logger = logging.getLogger(__name__)
 
 
 class YfinanceFetcher:
+    """
+    Thin facade over ``RawTickerData`` providing typed accessors used by
+    ``YfinanceParser``.
 
-    def __init__(self, ticker_symbol: str) -> None:
-        if not ticker_symbol or not ticker_symbol.strip():
-            raise ValueError("ticker_symbol must be a non-empty string.")
-        self._symbol = ticker_symbol.strip().upper()
+    Scope
+    -----
+    This class covers three concerns:
 
-    def fetch(self) -> RawTickerData:
-        logger.info("Fetching yfinance data for %s", self._symbol)
-        ticker = yf.Ticker(self._symbol)
+    * **Info-dict access** — ``get_info`` and ``get_fast_info`` for fields
+      sourced from ``ticker.info`` / ``ticker.fast_info``.
 
-        info      = self._safe_info(ticker)
-        annual    = self._fetch_annual(ticker)
-        quarterly = self._fetch_quarterly(ticker)
-        earnings_raw = self._safe_earnings_history(ticker)
-        price_raw    = self._safe_price_history(ticker)
+    * **Annual net-income series** — ``income_series_annual`` is the single
+      statement accessor retained here because ``YfinanceParser.eps_history``
+      needs it to build the per-year EPS series used in ``Valuation.build``.
 
-        return RawTickerData(
-            ticker_symbol=self._symbol,
-            info=info,
-            annual_income=annual["income"],
-            annual_cashflow=annual["cashflow"],
-            annual_balance_sheet=annual["balance_sheet"],
-            quarterly_income=quarterly["income"],
-            quarterly_cashflow=quarterly["cashflow"],
-            quarterly_balance_sheet=quarterly["balance_sheet"],
-            earnings_history_raw=earnings_raw,
-            price_history_raw=price_raw,
-        )
+    * **Price series** — ``price_series`` and ``highest_price`` for historical
+      price data.
 
-    def _safe_info(self, ticker: yf.Ticker) -> Dict[str, Any]:
-        try:
-            info = ticker.info
-            return info if isinstance(info, dict) else {}
-        except Exception as exc:
-            logger.warning("Could not fetch info for %s: %s", self._symbol, exc)
-            return {}
+    All other statement data (income, balance sheet, cash flow) is accessed
+    directly from ``RawTickerData`` by ``YfinanceDataLoader`` via
+    ``dataframe_utils``, so no additional statement accessors are needed here.
+    """
 
-    def _fetch_annual(self, ticker: yf.Ticker) -> Dict[str, pd.DataFrame]:
-        return {
-            "income":        self._safe_df(ticker, "financials"),
-            "cashflow":      self._safe_df(ticker, "cashflow"),
-            "balance_sheet": self._safe_df(ticker, "balance_sheet"),
-        }
+    def __init__(self, raw: RawTickerData) -> None:
+        self._raw = raw
 
-    def _fetch_quarterly(self, ticker: yf.Ticker) -> Dict[str, pd.DataFrame]:
-        return {
-            "income":        self._safe_df(ticker, "quarterly_financials"),
-            "cashflow":      self._safe_df(ticker, "quarterly_cashflow"),
-            "balance_sheet": self._safe_df(ticker, "quarterly_balance_sheet"),
-        }
 
-    def _safe_earnings_history(self, ticker: yf.Ticker) -> Optional[pd.DataFrame]:
-        try:
-            raw = getattr(ticker, "earnings_history", None)
-            if raw is None:
-                return None
-            if isinstance(raw, list):
-                df = pd.DataFrame(raw)
-            elif isinstance(raw, pd.DataFrame):
-                df = raw.copy()
-            else:
-                return None
-            return df if not df.empty else None
-        except Exception as exc:
-            logger.warning("Could not fetch earnings_history for %s: %s", self._symbol, exc)
+    def get_info(self, key: str, default=None):
+        if not self._raw.info:
+            return default
+        return self._raw.info.get(key, default)
+
+    def get_fast_info(self, key: str, default=None):
+        if self._raw.fast_info is None:
+            return default
+        return getattr(self._raw.fast_info, key, default)
+
+
+    def income_series_annual(
+        self,
+        label: Union[str, List[str]],
+    ) -> Optional[List[float]]:
+        return get_series(self._raw.income_stmt_a, label, ascending=True)
+
+
+    def price_series(self) -> Optional[List[float]]:
+        history = self._raw.history
+        if history is None or history.empty or "Close" not in history.columns:
             return None
+        values = [
+            float(v) for v in history["Close"].dropna().tolist()
+            if v is not None
+        ]
+        return values if values else None
 
-    def _safe_price_history(self, ticker: yf.Ticker) -> Optional[pd.DataFrame]:
-        try:
-            df = ticker.history(period="max", interval="1mo")
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                return df
+    def highest_price(self) -> Optional[float]:
+        series = self.price_series()
+        if not series:
             return None
-        except Exception as exc:
-            logger.warning("Could not fetch price history for %s: %s", self._symbol, exc)
-            return None
-
-    @staticmethod
-    def _safe_df(ticker: yf.Ticker, attr: str) -> pd.DataFrame:
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                value = getattr(ticker, attr, None)
-            if value is None:
-                return pd.DataFrame()
-            if isinstance(value, pd.DataFrame):
-                return value
-            return pd.DataFrame(value)
-        except Exception as exc:
-            logger.warning("Could not fetch %s.%s: %s", ticker.ticker, attr, exc)
-            return pd.DataFrame()
+        return max(series)

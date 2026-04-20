@@ -1,25 +1,31 @@
-from domain.core.enums import Sectors
-from infrastructure.mappers.base_mapper import GenericMapper
-from typing import Dict
+from __future__ import annotations
 
-class YahooSectorMapper(GenericMapper):
+from typing import Optional
 
-    @property
-    def target_type(self) -> type:
-        return Sectors
+from domain.core.enums.sectors import Sectors
 
-    @property
-    def mapping(self) -> Dict[Sectors, str]:
-        return {
-            Sectors.BASIC_MATERIALS: "basic-materials",
-            Sectors.COMMUNICATION_SERVICES: "communication-services",
-            Sectors.CONSUMER_CYCLICAL: "consumer-cyclical",
-            Sectors.CONSUMER_DEFENSIVE: "consumer-defensive",
-            Sectors.ENERGY: "energy",
-            Sectors.FINANCIAL_SERVICES: "financial-services",
-            Sectors.HEALTHCARE: "healthcare",
-            Sectors.INDUSTRIALS: "industrials",
-            Sectors.REAL_ESTATE: "real-estate",
-            Sectors.TECHNOLOGY: "technology",
-            Sectors.UTILITIES: "utilities",
-        }
+_YAHOO_SECTOR_MAP = {
+    "Basic Materials":        Sectors.BASIC_MATERIALS,
+    "Communication Services": Sectors.COMMUNICATION_SERVICES,
+    "Consumer Cyclical":      Sectors.CONSUMER_CYCLICAL,
+    "Consumer Defensive":     Sectors.CONSUMER_DEFENSIVE,
+    "Energy":                 Sectors.ENERGY,
+    "Financial Services":     Sectors.FINANCIAL_SERVICES,
+    "Healthcare":             Sectors.HEALTHCARE,
+    "Industrials":            Sectors.INDUSTRIALS,
+    "Real Estate":            Sectors.REAL_ESTATE,
+    "Technology":             Sectors.TECHNOLOGY,
+    "Utilities":              Sectors.UTILITIES,
+}
+
+
+def map_sector(raw_value: Optional[str]) -> Optional[Sectors]:
+    """
+    Convert a Yahoo Finance sector string to the ``Sectors`` enum member.
+
+    Returns ``None`` when the value is absent or unrecognised so that callers
+    can handle the miss gracefully.
+    """
+    if not raw_value:
+        return None
+    return _YAHOO_SECTOR_MAP.get(raw_value)

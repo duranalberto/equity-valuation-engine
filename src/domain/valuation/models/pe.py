@@ -1,29 +1,34 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List
-from ..base import ValuationResult, ValuationInput, ValuationParams, ValuationReport
+from typing import Dict, List
+
+from domain.valuation.base import ValuationParams, ValuationReport
 
 
 @dataclass
 class PEParameters(ValuationParams):
-    margin_of_safety: float = 0.20
-    discount_rate: float = 0.10
-    projection_years: int = 10
+    discount_rate: float = 0.09
 
 
 @dataclass
-class PEValuationInput(ValuationInput):
-    params: PEParameters
+class PEValuationInput:
+    from domain.metrics.stock import StockMetrics
+    stock_metrics: StockMetrics
+    growth_rates:  List[float]
+    params:        PEParameters
 
 
 @dataclass
-class PEValuationResult(ValuationResult):
-    growth_rates: List[float]
-    valuation_status: str
-    eps_progression: List[float]
-    value_in_x_years: float
-    present_value: float
+class PEValuationResult:
+    growth_rates:      List[float]
+    valuation_status:  str
+    eps_progression:   List[float]
+    value_in_x_years:  float
+    present_value:     float
 
 
 @dataclass
-class PEValuationReport(ValuationReport[PEValuationResult]):
-    params: PEParameters
+class PEValuationReport(ValuationReport):
+    scenarios: Dict[str, PEValuationResult]
+    params:    PEParameters

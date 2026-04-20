@@ -1,5 +1,6 @@
 from typing import Optional
 
+from domain.core.missing_registry import MissingValueRegistry
 from domain.metrics.stock import StockMetrics
 from domain.valuation.models.pe import PEParameters, PEValuationReport
 from domain.valuation.policies import ValuationCheckResult
@@ -49,5 +50,8 @@ class PEManager(ValuationManager[PEValuationReport]):
     def get_default_params(self) -> PEParameters:
         return get_params(self.stock_metrics, self.params.projection_years)
 
-    def validate_metrics(self) -> ValuationCheckResult:
-        return PEChecker(self.stock_metrics).evaluate()
+    def validate_metrics(
+        self,
+        registry: Optional[MissingValueRegistry] = None,
+    ) -> ValuationCheckResult:
+        return PEChecker(self.stock_metrics, registry).evaluate()

@@ -1,70 +1,113 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
-from typing import List, Set
+from typing import Dict, Iterator, List, Optional
 
-from .missing import Missing
-
-
-@dataclass(frozen=True)
-class FieldGap:
-    model: str
-    field: str
-    missing: Missing
-
-    @property
-    def path(self) -> str:
-        return self.field
+from .missing import MissingField, MissingReason
 
 
-class MissingRegistry:
+class MissingValueRegistry:
+    """
+    Collects ``MissingField`` events emitted during a single
+    ``MetricsLoader.build_stock_metrics()`` call.
+
+    Lifecycle
+    ---------
+    Create one instance before calling ``MetricsLoader``, pass it in, inspect
+    it afterwards.  Never reuse across builds.
+
+    Two internal buckets
+    --------------------
+    ``_raw``     — source-level misses recorded by ``get_from_field()`` when
+                   the data loader returns ``None``.  Stable after the loader
+                   phase completes.
+
+    ``_derived`` — formula-level misses recorded by ``_post_build_audit()``
+                   after ``_rebuild_derived()`` has run for the final time.
+                   Cleared by ``clear_derived()`` before the second rebuild
+                   pass so stale first-pass entries do not pollute the final
+                   registry state.
+    """
+
     def __init__(self) -> None:
-        self._gaps: List[FieldGap] = []
-        self._seen: Set[int] = set()
+        self._raw:     List[MissingField] = []
+        self._derived: List[MissingField] = []
 
-    def scan(self, model: object, model_name: str | None = None) -> "MissingRegistry":
-        self._scan(model, model_name=model_name, parent_path="")
-        return self
+    def record(
+        self,
+        model:  str,
+        field:  str,
+        reason: MissingReason,
+        detail: Optional[str] = None,
+    ) -> None:
+        """Record a source-level miss (called from ``_get_field_value``)."""
+        self._raw.append(MissingField(model, field, reason, detail))
 
-    def _scan(self, model: object, *, model_name: str | None, parent_path: str) -> None:
-        if not is_dataclass(model):
-            return
+    def record_derived(
+        self,
+        model:  str,
+        field:  str,
+        reason: MissingReason,
+        detail: Optional[str] = None,
+    ) -> None:
+        """Record a formula-level miss (called from ``_post_build_audit``)."""
+        self._derived.append(MissingField(model, field, reason, detail))
 
-        model_id = id(model)
-        if model_id in self._seen:
-            return
-        self._seen.add(model_id)
+    def clear_derived(self) -> None:
+        """
+        Discard all derived-field entries.
 
-        current_name = model_name or type(model).__name__
+        Called by ``MetricsLoader.build_stock_metrics()`` immediately before
+        the second ``_rebuild_derived()`` pass so stale first-pass entries
+        (computed without history) do not appear in the final registry.
+        """
+        self._derived.clear()
 
-        for field in fields(model):
-            value = getattr(model, field.name, None)
-            field_path = f"{parent_path}.{field.name}" if parent_path else field.name
+    def get(self, model: str, field: str) -> Optional[MissingField]:
+        """Return the first matching entry across both buckets, or ``None``."""
+        for entry in self._all():
+            if entry.model == model and entry.field == field:
+                return entry
+        return None
 
-            if isinstance(value, Missing):
-                self._gaps.append(
-                    FieldGap(model=current_name, field=field_path, missing=value)
-                )
-                continue
+    def has_missing_field(self, model: str, field: str) -> bool:
+        """Return ``True`` when the (model, field) pair has a recorded miss."""
+        return self.get(model, field) is not None
 
-            if is_dataclass(value):
-                self._scan(value, model_name=type(value).__name__, parent_path=field_path)
-                continue
+    def has_missing(self, model: Optional[str] = None) -> bool:
+        """
+        Return ``True`` when any entry exists.
 
-            if value is None:
-                continue
+        When ``model`` is given, restricts the check to that model name.
+        """
+        entries = self._all()
+        if model is None:
+            return bool(entries)
+        return any(e.model == model for e in entries)
 
-    @property
-    def gaps(self) -> List[FieldGap]:
-        return list(self._gaps)
+    def for_model(self, model: str) -> List[MissingField]:
+        """Return all entries for the given model, preserving insertion order."""
+        return [e for e in self._all() if e.model == model]
 
-    def gaps_for(self, model_name: str) -> List[FieldGap]:
-        return [g for g in self._gaps if g.model == model_name or g.path.startswith(f"{model_name}.")]
+    def summary(self) -> Dict[str, List[str]]:
+        """
+        Group missing field names by model.
 
-    def report(self) -> str:
-        if not self._gaps:
-            return "No missing fields detected."
-        return "\n".join(
-            f"[{g.path}] {g.missing.reason.value}: {g.missing.detail}"
-            for g in self._gaps
-        )
+        Returns a ``{model_name: [field_name, ...]}`` mapping useful for
+        logging and diagnostic output.
+        """
+        result: Dict[str, List[str]] = {}
+        for entry in self._all():
+            result.setdefault(entry.model, []).append(entry.field)
+        return result
+
+    def __iter__(self) -> Iterator[MissingField]:
+        return iter(self._all())
+
+    def __len__(self) -> int:
+        return len(self._raw) + len(self._derived)
+
+    def __bool__(self) -> bool:
+        return bool(self._raw or self._derived)
+
+    def _all(self) -> List[MissingField]:
+        return [*self._raw, *self._derived]

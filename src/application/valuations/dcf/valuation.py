@@ -47,11 +47,12 @@ def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
         input.params.terminal_growth_rate,
     )
 
-    equity_value = dcf_output.enterprise_value
-    if sm.balance_sheet.total_debt is not None:
-        equity_value -= sm.balance_sheet.total_debt
-    if sm.balance_sheet.cash_and_equivalents is not None:
-        equity_value += sm.balance_sheet.cash_and_equivalents
+    # total_debt and cash_and_equivalents are float = 0.0 — no None guards needed.
+    equity_value = (
+        dcf_output.enterprise_value
+        - sm.balance_sheet.total_debt
+        + sm.balance_sheet.cash_and_equivalents
+    )
 
     intrinsic_value = intrinsic_value_per_share(
         equity_value,
@@ -90,7 +91,7 @@ def _compute_sensitivity(
     base_fcf_projections: List[float],
     wacc_values: List[float],
     terminal_growth_values: List[float],
-) -> List[List[float | None]]:
+) -> List[List[Optional[float]]]:
     """
     Build a 2-D intrinsic-value-per-share matrix.
 
@@ -100,13 +101,14 @@ def _compute_sensitivity(
     A cell is ``None`` when WACC ≤ terminal_growth_rate (Gordon Growth Model
     is undefined) or when the resulting equity value would be nonsensical.
     """
-    matrix: List[List[float | None]] = []
-    total_debt = stock_metrics.balance_sheet.total_debt or 0.0
-    cash = stock_metrics.balance_sheet.cash_and_equivalents or 0.0
-    shares = stock_metrics.market_data.shares_outstanding
+    matrix: List[List[Optional[float]]] = []
+    # total_debt and cash are float = 0.0 — direct access, no None fallback needed.
+    total_debt = stock_metrics.balance_sheet.total_debt
+    cash       = stock_metrics.balance_sheet.cash_and_equivalents
+    shares     = stock_metrics.market_data.shares_outstanding
 
     for wacc_rate in wacc_values:
-        row: List[float | None] = []
+        row: List[Optional[float]] = []
         for tgr in terminal_growth_values:
             if wacc_rate <= tgr:
                 row.append(None)
@@ -135,20 +137,6 @@ def build_sensitivity_report(
     wacc_spread: float = 0.02,
     tgr_spread: float = 0.01,
 ) -> DCFSensitivityReport:
-    """
-    Construct a WACC × terminal-growth-rate sensitivity report.
-
-    The base values are always included as the central entry.  The axes are
-    built symmetrically around the base with ``wacc_steps`` and ``tgr_steps``
-    total points (including the base).
-
-    Parameters
-    ----------
-    wacc_spread  : total range around the base WACC (e.g. 0.02 → ±1 %).
-    tgr_spread   : total range around the base terminal growth rate (e.g. 0.01 → ±0.5 %).
-    wacc_steps   : number of WACC axis points (odd numbers produce a centred grid).
-    tgr_steps    : number of terminal growth rate axis points.
-    """
     def _axis(centre: float, spread: float, steps: int) -> List[float]:
         if steps <= 1:
             return [centre]
@@ -185,7 +173,7 @@ def execute_dcf_scenarios(
 
     cost_of_equity = cost_of_equity_capm(
         risk_free_rate=params.risk_free_rate,
-        beta=stock_metrics.market_data.beta,
+        beta=stock_metrics.market_data.beta,       # float = 1.0 default — never None
         market_risk_premium=params.market_risk_premium,
     )
 

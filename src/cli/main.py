@@ -1,11 +1,12 @@
 import argparse
 import logging
 import sys
-from typing import Callable, Dict, List, NamedTuple, Type
+from typing import Callable, Dict, List, NamedTuple, Tuple, Type
 
 from application import DCFManager, MetricsLoader, PEManager, ROEManager
 from cli.json_formatter import to_json
 from domain import StockMetrics
+from domain.core.missing_registry import MissingValueRegistry
 from domain.valuation.policies import ValuationCheckResult
 from domain.valuation.valuation_manager import ValuationManager
 
@@ -15,8 +16,8 @@ from .presenters.roe_presenter import cli_print_valuation as roe_print
 
 
 class RunConfig(NamedTuple):
-    ticker: str
-    print_cli: bool
+    ticker:     str
+    print_cli:  bool
     print_json: bool
 
 
@@ -27,31 +28,54 @@ VALUATION_MANAGERS: List[Type[ValuationManager]] = [DCFManager, PEManager, ROEMa
 
 CLI_PRESENTERS: Dict[Type[ValuationManager], Callable] = {
     DCFManager: dcf_print,
-    PEManager: pe_print,
+    PEManager:  pe_print,
     ROEManager: roe_print,
 }
 
 
-def fetch_stock_metrics(ticker: str) -> StockMetrics:
+def fetch_stock_metrics(ticker: str) -> Tuple[StockMetrics, MissingValueRegistry]:
+    """
+    Load stock metrics and return them together with the ``MissingValueRegistry``
+    populated during the build.
+
+    The registry is always created — callers that don't need diagnostics can
+    ignore it.  Downstream code (suitability checkers) uses the registry to
+    produce reason-differentiated factor severity.
+    """
+    registry = MissingValueRegistry()
     try:
-        metrics = MetricsLoader(ticker).build_stock_metrics()
-        logger.info("Stock metrics retrieved successfully for %s.", ticker)
-        return metrics
+        metrics = MetricsLoader(ticker, registry=registry).build_stock_metrics()
+        missing_count = len(registry)
+        if missing_count:
+            logger.info(
+                "Stock metrics retrieved for %s. Missing fields recorded: %d",
+                ticker, missing_count,
+            )
+        else:
+            logger.info("Stock metrics retrieved successfully for %s.", ticker)
+        return metrics, registry
     except Exception as e:
         logger.error("Failed to retrieve data for %s: %s", ticker, e)
         sys.exit(1)
 
 
-def display_stock_metrics(stock_metrics: StockMetrics, print_json: bool) -> None:
+def display_stock_metrics(
+    stock_metrics: StockMetrics,
+    print_json: bool,
+) -> None:
     if print_json:
         print("--- Stock Metrics JSON ---")
         print(to_json(stock_metrics, compact=True))
 
 
-def run_suitability_check(manager: ValuationManager, method_name: str) -> ValuationCheckResult:
+def run_suitability_check(
+    manager: ValuationManager,
+    method_name: str,
+    registry: MissingValueRegistry,
+) -> ValuationCheckResult:
     logger.info("Running suitability check for %s...", method_name)
     try:
-        result = manager.validate_metrics()
+        result = manager.validate_metrics(registry=registry)
     except Exception as e:
         logger.error("Error during %s suitability evaluation: %s", method_name, e)
         result = ValuationCheckResult(
@@ -68,10 +92,15 @@ def run_suitability_check(manager: ValuationManager, method_name: str) -> Valuat
     return result
 
 
-def run_valuation(manager: ValuationManager, print_cli: bool, print_json: bool) -> None:
+def run_valuation(
+    manager: ValuationManager,
+    registry: MissingValueRegistry,
+    print_cli: bool,
+    print_json: bool,
+) -> None:
     manager_cls = manager.__class__
     method_name = manager_cls.__name__.replace("Manager", "").upper()
-    check_result = run_suitability_check(manager, method_name)
+    check_result = run_suitability_check(manager, method_name, registry)
 
     if check_result.total_severity_score > 10:
         logger.warning(
@@ -94,27 +123,38 @@ def run_valuation(manager: ValuationManager, print_cli: bool, print_json: bool) 
                 print(f"--- {method_name} Result CLI ---")
                 presenter(manager.stock_metrics, valuation_report)
         if not print_cli and not print_json:
-            logger.info("%s valuation completed successfully (no output flags).", method_name)
+            logger.info(
+                "%s valuation completed successfully (no output flags).", method_name
+            )
     except Exception as e:
         logger.error("Failed to run %s analysis: %s", method_name, e)
 
 
-def run_for_ticker(config: RunConfig, managers: List[Type[ValuationManager]]) -> None:
+def run_for_ticker(
+    config: RunConfig,
+    managers: List[Type[ValuationManager]],
+) -> None:
     logger.info("Starting valuation for %s", config.ticker)
-    stock_metrics = fetch_stock_metrics(config.ticker)
+    stock_metrics, registry = fetch_stock_metrics(config.ticker)
     display_stock_metrics(stock_metrics, config.print_json)
+
     for ManagerClass in managers:
         manager_instance = ManagerClass(stock_metrics=stock_metrics)
-        run_valuation(manager_instance, print_cli=config.print_cli, print_json=config.print_json)
+        run_valuation(
+            manager_instance,
+            registry,
+            print_cli=config.print_cli,
+            print_json=config.print_json,
+        )
 
 
 def parse_arguments() -> RunConfig:
     parser = argparse.ArgumentParser(description="Run multiple stock valuations.")
     parser.add_argument("ticker", nargs="?", help="Ticker symbol (e.g., AAPL)")
     output_group = parser.add_mutually_exclusive_group()
-    output_group.add_argument("--cli", action="store_true")
+    output_group.add_argument("--cli",  action="store_true")
     output_group.add_argument("--json", action="store_true")
-    output_group.add_argument("--all", action="store_true")
+    output_group.add_argument("--all",  action="store_true")
     args = parser.parse_args()
 
     ticker = args.ticker or input("Enter ticker symbol (e.g., AAPL): ").strip()
@@ -124,7 +164,7 @@ def parse_arguments() -> RunConfig:
 
     return RunConfig(
         ticker=ticker.upper(),
-        print_cli=args.cli or args.all,
+        print_cli=args.cli  or args.all,
         print_json=args.json or args.all,
     )
 

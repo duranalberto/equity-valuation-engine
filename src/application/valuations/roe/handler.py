@@ -1,5 +1,6 @@
 from typing import Optional
 
+from domain.core.missing_registry import MissingValueRegistry
 from domain.metrics.stock import StockMetrics
 from domain.valuation.base import ValuationParams
 from domain.valuation.models.roe import ROEParameters, ROEValuationReport
@@ -51,5 +52,8 @@ class ROEManager(ValuationManager[ROEValuationReport]):
     def get_default_params(self) -> ROEParameters:
         return get_params(self.stock_metrics, self.params.projection_years)
 
-    def validate_metrics(self) -> ValuationCheckResult:
-        return ROEChecker(self.stock_metrics).evaluate()
+    def validate_metrics(
+        self,
+        registry: Optional[MissingValueRegistry] = None,
+    ) -> ValuationCheckResult:
+        return ROEChecker(self.stock_metrics, registry).evaluate()

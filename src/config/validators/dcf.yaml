@@ -1,8 +1,8 @@
 # DCF Validator — sector-specific risk thresholds
 #
-# beta_warning:         flag high-volatility stocks (dimensionless ratio).
+# beta_warning:          flag high-volatility stocks (dimensionless ratio).
 # cost_of_debt_critical: flag excessive debt cost (decimal, e.g. 0.18 = 18 %).
-# market_cap_warning:   flag small/micro-cap stocks (absolute USD value).
+# market_cap_warning:    flag small/micro-cap stocks (absolute USD value).
 #
 # Keys must match domain.core.enums.Sectors values exactly.
 
@@ -33,14 +33,14 @@ cost_of_debt_critical:
   utilities:              0.16
 
 market_cap_warning:
-  basic-materials:        500_000_000
-  communication-services: 500_000_000
-  consumer-cyclical:      500_000_000
-  consumer-defensive:     300_000_000
-  energy:                 500_000_000
-  financial-services:     500_000_000
-  healthcare:             300_000_000
-  industrials:            500_000_000
-  real-estate:            200_000_000
-  technology:             500_000_000
-  utilities:              300_000_000
+  basic-materials:        500000000
+  communication-services: 500000000
+  consumer-cyclical:      500000000
+  consumer-defensive:     300000000
+  energy:                 500000000
+  financial-services:     500000000
+  healthcare:             300000000
+  industrials:            500000000
+  real-estate:            200000000
+  technology:             500000000
+  utilities:              300000000

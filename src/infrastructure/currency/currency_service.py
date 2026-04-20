@@ -1,76 +1,50 @@
-import logging
-import time
-from typing import Dict, Optional
+from __future__ import annotations
 
-import requests
+import logging
+from functools import lru_cache
+from typing import Optional
+
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-USD = "USD"
-
-FALLBACK_FX_RATES: Dict[str, float] = {
-    "EUR": 1.08, "JPY": 0.0066, "GBP": 1.25, "CAD": 0.74, "AUD": 0.66,
-    "NZD": 0.61, "CHF": 1.14, "CNY": 0.14, "HKD": 0.13, "SGD": 0.74,
-    "SEK": 0.093, "NOK": 0.094, "DKK": 0.145, "MXN": 0.058, "BRL": 0.20,
-    "INR": 0.012, "RUB": 0.011, "ZAR": 0.055, "TRY": 0.031, "KRW": 0.00075,
-    "TWD": 0.031, "PLN": 0.25, "CZK": 0.044, "HUF": 0.0030, "ILS": 0.27,
-    "SAR": 0.27, "AED": 0.27,
-}
-
-_RATE_CACHE: Dict[str, tuple] = {}
-CACHE_TTL = 86400
-_SESSION = requests.Session()
+_USD_FALLBACK = 1.0
 
 
-def _get_cached_rate(currency: str) -> Optional[float]:
-    entry = _RATE_CACHE.get(currency)
-    if not entry:
-        return None
-    rate, ts = entry
-    if time.time() - ts < CACHE_TTL:
-        return rate
-    return None
+@lru_cache(maxsize=128)
+def get_exchange_rate(from_currency: str, to_currency: str) -> float:
+    """
+    Return the exchange rate from_currency → to_currency.
 
-
-def _store_cached_rate(currency: str, rate: float) -> None:
-    _RATE_CACHE[currency] = (rate, time.time())
-
-
-def get_rate_to_usd(currency: str) -> float:
-    if not currency:
-        logger.warning("Empty or None currency received, defaulting to USD rate 1.0")
+    Falls back to 1.0 (identity) on any error so that callers always get a
+    usable number and can continue without crashing.
+    """
+    if from_currency.upper() == to_currency.upper():
         return 1.0
-
-    src = currency.strip().upper()
-    if src == USD:
-        return 1.0
-
-    cached = _get_cached_rate(src)
-    if cached is not None:
-        return cached
-
-    url = f"https://api.exchangerate.host/latest?base={USD}&symbols={src}"
+    ticker_symbol = f"{from_currency.upper()}{to_currency.upper()}=X"
     try:
-        response = _SESSION.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json() or {}
-        rates = data.get("rates") or {}
-        raw_rate = rates.get(src)
-
-        if isinstance(raw_rate, (float, int)) and raw_rate > 0:
-            rate = 1.0 / raw_rate
-            _store_cached_rate(src, rate)
-            return rate
-        else:
-            logger.warning("Received invalid FX rate for %s: %s", src, raw_rate)
+        info = yf.Ticker(ticker_symbol).fast_info
+        rate = getattr(info, "last_price", None)
+        if rate and float(rate) > 0:
+            return float(rate)
+        logger.warning(
+            "No valid exchange rate found for %s; defaulting to 1.0.", ticker_symbol
+        )
     except Exception as exc:
-        logger.warning("FX API failure for %s: %s", src, exc)
+        logger.warning(
+            "Exchange-rate lookup failed for %s: %s. Defaulting to 1.0.",
+            ticker_symbol, exc,
+        )
+    return _USD_FALLBACK
 
-    fallback = FALLBACK_FX_RATES.get(src)
-    if fallback is None:
-        logger.warning("No fallback FX rate found for currency %s; defaulting to 1.0", src)
-        fallback = 1.0
 
-    logger.warning("Using fallback FX rate for %s: %.6f", src, fallback)
-    _store_cached_rate(src, fallback)
-    return fallback
+def convert(
+    amount: Optional[float],
+    from_currency: str,
+    to_currency: str,
+) -> Optional[float]:
+    """Convert *amount* from one currency to another, or return None on failure."""
+    if amount is None:
+        return None
+    rate = get_exchange_rate(from_currency, to_currency)
+    return amount * rate

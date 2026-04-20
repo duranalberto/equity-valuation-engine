@@ -11,6 +11,6 @@ def get_params(stock_metrics: StockMetrics, projection_years: int = 10) -> PEPar
 
     return PEParameters(
         margin_of_safety=_cfg.get_float("margin_of_safety", sector, default=0.25),
-        discount_rate=_cfg.get_float("discount_rate",       sector, default=0.09),
+        discount_rate=_cfg.get_float("discount_rate",        sector, default=0.09),
         projection_years=projection_years,
     )

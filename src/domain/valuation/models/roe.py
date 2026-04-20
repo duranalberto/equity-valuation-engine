@@ -1,35 +1,40 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List
-from ..base import ValuationResult, ValuationInput, ValuationParams, ValuationReport
+from typing import Dict, List
+
+from domain.valuation.base import ValuationParams, ValuationReport
 
 
 @dataclass
 class ROEParameters(ValuationParams):
-    margin_of_safety: float = 0.20
-    discount_rate: float = 0.10
-    projection_years: int = 10
+    discount_rate: float = 0.09
 
 
 @dataclass
-class ROEValuationInput(ValuationInput):
+class ROEValuationInput:
+    from domain.metrics.stock import StockMetrics
+    stock_metrics:          StockMetrics
     dividend_rate_per_share: float
-    params: ROEParameters
+    growth_rates:            List[float]
+    params:                  ROEParameters
 
 
 @dataclass
-class ROEValuationResult(ValuationResult):
-    growth_rates: List[float]
-    valuation_status: str
+class ROEValuationResult:
+    growth_rates:                    List[float]
+    valuation_status:                str
     shareholders_equity_progression: List[float]
-    dividend_progression: List[float]
-    npv_dividend_progression: List[float]
-    year_n_income: float
-    required_value: float
-    npv_required_value: float
-    npv_dividends: float
-    intrinsic_value: float
+    dividend_progression:            List[float]
+    npv_dividend_progression:        List[float]
+    year_n_income:                   float
+    required_value:                  float
+    npv_required_value:              float
+    npv_dividends:                   float
+    intrinsic_value:                 float
 
 
 @dataclass
-class ROEValuationReport(ValuationReport[ROEValuationResult]):
-    params: ROEParameters
+class ROEValuationReport(ValuationReport):
+    scenarios: Dict[str, ROEValuationResult]
+    params:    ROEParameters

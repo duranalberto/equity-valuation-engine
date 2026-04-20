@@ -1,15 +1,22 @@
 from abc import ABC, abstractmethod
 from typing import Generic, Optional, TypeVar
 
-from ..metrics.stock import StockMetrics
-from .base import ValuationParams, ValuationReport
-from .policies import ValuationCheckResult
+from domain.core.missing_registry import MissingValueRegistry
+from domain.metrics.stock import StockMetrics
+from domain.valuation.base import ValuationParams, ValuationReport
+from domain.valuation.policies import ValuationCheckResult
 
 TReport = TypeVar("TReport", bound=ValuationReport)
+
 
 class ValuationManager(ABC, Generic[TReport]):
     """
     Abstract base for all valuation managers.
+
+    ``validate_metrics`` accepts an optional ``MissingValueRegistry`` so that
+    checkers can produce reason-differentiated factor severity (e.g. a field
+    missing because it is ``NOT_APPLICABLE`` → ``WARNING`` rather than
+    ``CRITICAL``).
     """
 
     stock_metrics: StockMetrics
@@ -41,5 +48,8 @@ class ValuationManager(ABC, Generic[TReport]):
         pass
 
     @abstractmethod
-    def validate_metrics(self) -> ValuationCheckResult:
+    def validate_metrics(
+        self,
+        registry: Optional[MissingValueRegistry] = None,
+    ) -> ValuationCheckResult:
         pass

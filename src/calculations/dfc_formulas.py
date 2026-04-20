@@ -67,13 +67,13 @@ def market_implied_wacc(
         raise ValueError(
             "Valid positive enterprise value and FCF projections are required."
         )
-    low = max(terminal_growth_rate + 1e-6, 1e-4)
-    high = 1.0
+    low       = max(terminal_growth_rate + 1e-6, 1e-4)
+    high      = 1.0
     last_fcfs = fcf_projections[-3:]
     num_years = len(fcf_projections)
 
     for _ in range(100):
-        mid = (low + high) / 2
+        mid    = (low + high) / 2
         pv_fcfs = sum(
             _discount_to_present(fcf, mid, i + 1)
             for i, fcf in enumerate(fcf_projections)
@@ -114,8 +114,8 @@ def compute_discounted_cash_flow(
     if not fcf_projections:
         raise ValueError("At least one FCF projection is required.")
 
-    pv_fcfs       = _present_value_of_fcfs(fcf_projections, discount_rate)
-    pv_fcfs_total = safe_sum(*pv_fcfs)
+    pv_fcfs        = _present_value_of_fcfs(fcf_projections, discount_rate)
+    pv_fcfs_total  = safe_sum(*pv_fcfs)
     terminal_value = _terminal_value_gordon(
         fcf_projections, discount_rate, terminal_growth_rate
     )
@@ -166,8 +166,8 @@ def compute_wacc(
 
     _cost_of_debt = float(cost_of_debt or 0)
     _tax_rate     = float(tax_rate or 0)
-    eq_w   = _equity_weight(market_cap, total_value)
-    de_w   = _debt_weight(total_debt, total_value)
+    eq_w       = _equity_weight(market_cap, total_value)
+    de_w       = _debt_weight(total_debt, total_value)
     wacc_value = _waac(eq_w, cost_of_equity, de_w, _cost_of_debt, _tax_rate)
 
     return WACC(

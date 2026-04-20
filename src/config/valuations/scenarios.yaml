@@ -1,9 +1,9 @@
-# Growth scenario multipliers and per-scenario volatility bands
+# Growth scenario multipliers and per-scenario volatility bands.
 #
 # scenario_multipliers: scales the derived base-growth rate for each scenario.
-#   Base is always 1.0 (no scaling). Bear and Bull are sector-differentiated.
+#   Base is always 1.0. Bear and Bull are sector-differentiated.
 #
-# scenario_volatility: gaussian noise width added to each annual projection.
+# scenario_volatility: noise width added to each annual projection.
 #   Higher volatility → wider year-to-year dispersion within a scenario.
 #
 # Keys must match domain.core.enums.Sectors values exactly.

@@ -1,8 +1,8 @@
 from typing import List, Optional, Tuple
 
 from config.config_loader import load_validator_config
-from domain.core.missing import Missing, MissingReason
-from domain.core.missing_registry import MissingRegistry
+from domain.core.missing import MissingReason
+from domain.core.missing_registry import MissingValueRegistry
 from domain.core.enums import Sectors
 from domain.metrics.stock import StockMetrics
 from domain.valuation.policies import (
@@ -24,8 +24,13 @@ class DCFChecker(ValuationChecker):
     CRITICAL_WEIGHT = 3
     WARNING_WEIGHT  = 1
 
-    def __init__(self, stock_metrics: StockMetrics):
-        self._metrics = stock_metrics
+    def __init__(
+        self,
+        stock_metrics: StockMetrics,
+        registry: Optional[MissingValueRegistry] = None,
+    ):
+        self._metrics  = stock_metrics
+        self._registry = registry
         self._factors: List[CheckFactor] = []
         self._score = 0
 
@@ -40,9 +45,6 @@ class DCFChecker(ValuationChecker):
         )
         self._score += weight
 
-    def missing_report(self) -> MissingRegistry:
-        return MissingRegistry().scan(self._metrics)
-
     def _interpret_score(self) -> Tuple[bool, str]:
         score = self._score
         if score == 0:
@@ -53,8 +55,28 @@ class DCFChecker(ValuationChecker):
             return False, "Moderate concerns, use DCF with caution."
         return False, "Significant risk, DCF may be unreliable."
 
+    def _missing_severity(
+        self,
+        model: str,
+        field: str,
+        default: FactorSeverity = FactorSeverity.CRITICAL,
+    ) -> FactorSeverity:
+        """
+        Look up the registry entry for (model, field) and return a
+        reason-differentiated severity.
+
+        ``NOT_APPLICABLE`` → WARNING (field is not meaningful for this ticker).
+        All other reasons  → ``default`` (usually CRITICAL).
+        """
+        if self._registry is None:
+            return default
+        entry = self._registry.get(model, field)
+        if entry is not None and entry.reason == MissingReason.NOT_APPLICABLE:
+            return FactorSeverity.WARNING
+        return default
+
     def _check_free_cash_flow(self):
-        sector = _sector(self._metrics)
+        sector           = _sector(self._metrics)
         fcf_ttm          = self._metrics.cash_flow.fcf_ttm
         last_quarter_fcf = self._metrics.cash_flow.last_quarter_fcf
         last_year_fcf    = self._metrics.cash_flow.last_year_fcf
@@ -65,22 +87,21 @@ class DCFChecker(ValuationChecker):
             else FactorSeverity.CRITICAL
         )
 
-        if isinstance(fcf_ttm, Missing):
+        if fcf_ttm == 0.0 and self._registry is not None and \
+                self._registry.has_missing_field("CashFlow", "fcf_ttm"):
+            sev = self._missing_severity("CashFlow", "fcf_ttm")
+            entry = self._registry.get("CashFlow", "fcf_ttm")
+            detail = entry.detail if entry else "Free Cash Flow (TTM) data is missing."
+            self._add_factor("Missing FCF (TTM)", detail, sev)
+        elif fcf_ttm == 0.0 and self._registry is None:
             self._add_factor(
                 "Missing FCF (TTM)",
-                f"Free Cash Flow (TTM) data is missing: {fcf_ttm.reason.value}.",
-                FactorSeverity.WARNING if fcf_ttm.reason == MissingReason.NOT_REPORTED else FactorSeverity.CRITICAL,
-                fcf_ttm,
-            )
-        elif fcf_ttm is None:
-            self._add_factor(
-                "Missing FCF (TTM)",
-                "Free Cash Flow (TTM) data is missing.",
+                "Free Cash Flow (TTM) is zero or missing.",
                 FactorSeverity.CRITICAL,
             )
         elif fcf_ttm < 0:
             message = f"Free Cash Flow (TTM) is negative: {fcf_ttm:,.0f}"
-            if last_quarter_fcf is not None and last_quarter_fcf > 0:
+            if last_quarter_fcf > 0:
                 self._add_factor(
                     "Negative TTM FCF (Temporary)",
                     f"{message}, but last quarter FCF is positive, suggesting temporary cash burn.",
@@ -95,18 +116,13 @@ class DCFChecker(ValuationChecker):
                     fcf_ttm,
                 )
 
-        if isinstance(last_year_fcf, Missing):
-            self._add_factor(
-                "Missing Last Year FCF",
-                f"Last Year FCF data is missing: {last_year_fcf.reason.value}.",
-                FactorSeverity.WARNING if last_year_fcf.reason == MissingReason.NOT_REPORTED else FactorSeverity.CRITICAL,
-                last_year_fcf,
-            )
-        elif last_year_fcf is None:
+        if last_year_fcf == 0.0 and self._registry is not None and \
+                self._registry.has_missing_field("CashFlow", "last_year_fcf"):
+            sev = self._missing_severity("CashFlow", "last_year_fcf")
             self._add_factor(
                 "Missing Last Year FCF",
                 "Last Year FCF data is missing.",
-                FactorSeverity.CRITICAL,
+                sev,
             )
         elif last_year_fcf < 0:
             self._add_factor(
@@ -117,25 +133,28 @@ class DCFChecker(ValuationChecker):
             )
 
     def _check_profitability(self):
-        eps_ttm         = self._metrics.market_data.eps_ttm if self._metrics.market_data else None
-        net_income_ttm  = self._metrics.financials.net_income_ttm
+        eps_ttm          = self._metrics.market_data.eps_ttm if self._metrics.market_data else 0.0
+        net_income_ttm   = self._metrics.financials.net_income_ttm
         operating_cf_ttm = self._metrics.cash_flow.operating_cf_ttm
 
-        if eps_ttm is None or eps_ttm <= 0:
+        if eps_ttm <= 0:
+            sev = self._missing_severity("MarketData", "eps_ttm") \
+                if eps_ttm == 0.0 else FactorSeverity.CRITICAL
             self._add_factor(
                 "Negative EPS (TTM)",
                 f"Earnings Per Share (TTM) is zero, negative, or missing: {eps_ttm}",
-                FactorSeverity.CRITICAL,
+                sev,
                 eps_ttm,
             )
 
-        if net_income_ttm is None:
+        if net_income_ttm == 0.0 and self._registry is not None and \
+                self._registry.has_missing_field("Financials", "net_income_ttm"):
             self._add_factor(
                 "Missing Net Income (TTM)",
                 "Net Income (TTM) data is missing.",
                 FactorSeverity.CRITICAL,
             )
-        elif net_income_ttm <= 0:
+        elif net_income_ttm <= 0 and net_income_ttm != 0.0:
             self._add_factor(
                 "Negative Net Income (TTM)",
                 f"Net Income (TTM) is zero or negative: {net_income_ttm:,.0f}",
@@ -143,7 +162,8 @@ class DCFChecker(ValuationChecker):
                 net_income_ttm,
             )
 
-        if operating_cf_ttm is None:
+        if operating_cf_ttm == 0.0 and self._registry is not None and \
+                self._registry.has_missing_field("CashFlow", "operating_cf_ttm"):
             self._add_factor(
                 "Missing Operating CF",
                 "Operating Cash Flow (TTM) data is missing.",
@@ -158,13 +178,13 @@ class DCFChecker(ValuationChecker):
             )
 
     def _check_risk_and_stability(self):
-        sector     = _sector(self._metrics)
+        sector      = _sector(self._metrics)
         market_data = self._metrics.market_data
-        valuation  = self._metrics.valuation
+        valuation   = self._metrics.valuation
 
-        cost_of_debt  = valuation.cost_of_debt if valuation else None
+        cost_of_debt  = valuation.cost_of_debt if valuation else 0.0
         cod_threshold = _cfg.get_float("cost_of_debt_critical", sector, default=0.20)
-        if cost_of_debt is not None and cost_of_debt > cod_threshold:
+        if cost_of_debt > cod_threshold:
             self._add_factor(
                 "High Cost of Debt",
                 (
@@ -176,8 +196,8 @@ class DCFChecker(ValuationChecker):
                 cost_of_debt,
             )
 
-        tax_rate = valuation.corporate_tax_rate if valuation else None
-        if tax_rate is not None and tax_rate < 0:
+        tax_rate = valuation.corporate_tax_rate if valuation else 0.0
+        if tax_rate < 0:
             self._add_factor(
                 "Negative Tax Rate",
                 f"Corporate Tax Rate is negative: {tax_rate:.2%}",
@@ -185,9 +205,9 @@ class DCFChecker(ValuationChecker):
                 tax_rate,
             )
 
-        beta           = market_data.beta if market_data else None
+        beta           = market_data.beta if market_data else 1.0
         beta_threshold = _cfg.get_float("beta_warning", sector, default=2.0)
-        if beta is not None and beta > beta_threshold:
+        if beta > beta_threshold:
             self._add_factor(
                 "High Beta",
                 (
@@ -199,9 +219,9 @@ class DCFChecker(ValuationChecker):
                 beta,
             )
 
-        market_cap    = market_data.market_cap if market_data else None
+        market_cap    = market_data.market_cap if market_data else 0.0
         cap_threshold = _cfg.get_int("market_cap_warning", sector, default=500_000_000)
-        if market_cap is not None and market_cap < cap_threshold:
+        if market_cap > 0 and market_cap < cap_threshold:
             self._add_factor(
                 "Small Market Cap",
                 (
@@ -218,9 +238,7 @@ class DCFChecker(ValuationChecker):
         net_income_ttm      = self._metrics.financials.net_income_ttm
 
         if (
-            revenue_growth_rate is not None
-            and revenue_growth_rate > 0.2
-            and net_income_ttm is not None
+            revenue_growth_rate > 0.2
             and net_income_ttm < 0
         ):
             self._add_factor(
@@ -248,5 +266,8 @@ class DCFChecker(ValuationChecker):
         )
 
 
-def evaluate_dcf(stock_metrics: StockMetrics) -> ValuationCheckResult:
-    return DCFChecker(stock_metrics).evaluate()
+def evaluate_dcf(
+    stock_metrics: StockMetrics,
+    registry: Optional[MissingValueRegistry] = None,
+) -> ValuationCheckResult:
+    return DCFChecker(stock_metrics, registry).evaluate()

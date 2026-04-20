@@ -1,27 +1,45 @@
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
 from domain.metrics.stock import StockMetrics
 from domain.valuation.models.pe import (
-    PEValuationResult, PEValuationInput, PEParameters, PEValuationReport,
+    PEParameters,
+    PEValuationInput,
+    PEValuationReport,
+    PEValuationResult,
 )
+
+from ..utils import evaluate_price, generate_growth_scenarios
 from .defaults import get_params
-from ..utils import generate_growth_scenarios, evaluate_price
 
 
 def pe_valuation(input: PEValuationInput) -> PEValuationResult:
-    eps = input.stock_metrics.market_data.eps_ttm
-    eps_progression = []
+    sm = input.stock_metrics
+
+    # median_historical_pe stays Optional[float] in the domain model.
+    # PEChecker._check_valuation_inputs() is the firewall that blocks execution
+    # when it is None.  The guard here is a defensive backstop — it should
+    # never be reached in normal operation.
+    median_pe = sm.valuation.median_historical_pe
+    if median_pe is None:
+        raise ValueError(
+            "median_historical_pe is None — run PEChecker.evaluate() before "
+            "calling execute_pe_scenarios() to catch this as a validation error."
+        )
+
+    eps = sm.market_data.eps_ttm
+    eps_progression: List[float] = []
 
     for year in range(input.params.projection_years):
         eps *= (1 + input.growth_rates[year])
         eps_progression.append(eps)
 
-    value_in_x_years = eps * input.stock_metrics.valuation.median_historical_pe
+    value_in_x_years = eps * median_pe
     present_value = value_in_x_years / (
         (1 + input.params.discount_rate) ** input.params.projection_years
     )
 
     valuation_status = evaluate_price(
-        current_price=input.stock_metrics.market_data.current_price,
+        current_price=sm.market_data.current_price,
         intrinsic_value=present_value,
     )
 

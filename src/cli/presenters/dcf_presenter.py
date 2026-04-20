@@ -13,9 +13,9 @@ from .utils import colors, fmt_num, fmt_pct
 def build_summary_metrics_table(current_price, pe_ratio, report):
     return [
         ["Current Stock Price", fmt_num(current_price)],
-        ["P/E Ratio", fmt_num(pe_ratio)],
-        ["Cost of Equity", fmt_pct(report.wacc.cost_of_equity)],
-        ["WACC", fmt_pct(report.wacc.wacc)],
+        ["P/E Ratio",           fmt_num(pe_ratio)],
+        ["Cost of Equity",      fmt_pct(report.wacc.cost_of_equity)],
+        ["WACC",                fmt_pct(report.wacc.wacc)],
     ]
 
 
@@ -52,7 +52,7 @@ def build_growth_rate_table(report):
 def _build_projection_table(report, get_values):
     data_table = []
     for scenario_name, r in report.scenarios.items():
-        proj = get_values(r)
+        proj        = get_values(r)
         total_growth = (proj[-1] / proj[0] - 1) if proj and proj[0] != 0 else None
         data_table.append([scenario_name] + [fmt_num(v) for v in proj] + [fmt_pct(total_growth)])
     return data_table
@@ -70,17 +70,16 @@ def build_sensitivity_table(sens: DCFSensitivityReport) -> tuple[list, list]:
     """
     Returns (headers, rows) for a tabulate call.
 
-    Rows  → WACC values (descending so higher WACC is at the top, lower IV).
+    Rows  → WACC values (descending so higher WACC is at top).
     Cols  → terminal growth rate values (ascending left to right).
-
-    The base-case cell is marked with a '*' suffix to make it easy to spot.
+    The base-case cell is marked with a '*' suffix.
     """
     tgr_headers = ["WACC \\ TGR"] + [fmt_pct(t) for t in sens.terminal_growth_values]
 
     rows = []
     wacc_indices = list(range(len(sens.wacc_values) - 1, -1, -1))
     for i in wacc_indices:
-        wacc = sens.wacc_values[i]
+        wacc  = sens.wacc_values[i]
         label = fmt_pct(wacc)
         if abs(wacc - sens.base_wacc) < 1e-6:
             label += "*"
@@ -100,9 +99,9 @@ def build_sensitivity_table(sens: DCFSensitivityReport) -> tuple[list, list]:
 
 
 def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> None:
-    ticker = metrics.profile.ticker
+    ticker        = metrics.profile.ticker
     current_price = metrics.market_data.current_price
-    pe_ratio = metrics.market_data.pe_ttm
+    pe_ratio      = metrics.market_data.pe_ttm
 
     if not report.scenarios:
         print(f"ERROR: DCFValuationReport for {ticker} contains no scenarios.")
@@ -124,16 +123,16 @@ def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> No
 
     print("\n-- Growth Rate Comparison by Scenario --")
     num_growth_years = len(first_result.growth_rates)
-    growth_headers = ["Scenario"] + [f"Year {i + 1}" for i in range(num_growth_years)]
+    growth_headers   = ["Scenario"] + [f"Year {i + 1}" for i in range(num_growth_years)]
     print(tabulate(build_growth_rate_table(report), headers=growth_headers, tablefmt="fancy_grid"))
 
     print("\n-- Free Cash Flow Projections by Scenario --")
-    proj_len = len(first_result.fcf_projections)
+    proj_len   = len(first_result.fcf_projections)
     fcf_headers = ["Scenario"] + [f"Year {i + 1}" for i in range(proj_len)] + ["Total Growth"]
     print(tabulate(build_fcf_projection_table(report), headers=fcf_headers, tablefmt="fancy_grid"))
 
     print("\n-- Present Value of Each FCF by Scenario --")
-    pv_len = len(first_result.dcf.pv_fcfs)
+    pv_len     = len(first_result.dcf.pv_fcfs)
     pv_headers = ["Scenario"] + [f"Year {i + 1}" for i in range(pv_len)] + ["Total Growth"]
     print(tabulate(build_pv_fcf_table(report), headers=pv_headers, tablefmt="fancy_grid"))
 
@@ -143,8 +142,10 @@ def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> No
             f"\n-- Intrinsic Value Sensitivity: WACC × Terminal Growth Rate "
             f"({sens.scenario_name} scenario FCFs) --"
         )
-        print(f"   (* marks base-case cell: WACC={fmt_pct(sens.base_wacc)}, "
-              f"TGR={fmt_pct(sens.base_terminal_growth)})")
+        print(
+            f"   (* marks base-case cell: WACC={fmt_pct(sens.base_wacc)}, "
+            f"TGR={fmt_pct(sens.base_terminal_growth)})"
+        )
         headers, rows = build_sensitivity_table(sens)
         print(tabulate(rows, headers=headers, tablefmt="fancy_grid"))
     print()

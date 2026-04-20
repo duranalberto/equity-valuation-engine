@@ -1,34 +1,28 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 
 class MissingReason(Enum):
-    DATA_SOURCE_GAP = "data_source_gap"
-    NOT_REPORTED = "not_reported"
-    NOT_APPLICABLE = "not_applicable"
-    INSUFFICIENT_DATA = "insufficient_data"
-    INVALID_INPUT = "invalid_input"
+    NOT_IN_SOURCE     = "not_in_source"      # yfinance row absent or all-NaN
+    ZERO_DENOMINATOR  = "zero_denominator"   # safe_div returned None because denom == 0
+    INSUFFICIENT_DATA = "insufficient_data"  # < N data points for CAGR, median PE, etc.
+    DERIVED_FAILED    = "derived_failed"     # component(s) zero/missing; formula unusable
+    NOT_APPLICABLE    = "not_applicable"     # field meaningless for this instrument type
 
 
 @dataclass(frozen=True)
-class Missing:
+class MissingField:
+    """
+    Immutable record of a single field that could not be populated.
+
+    ``model``  — domain class name, e.g. ``"Financials"``.
+    ``field``  — attribute name on that class, e.g. ``"ebitda_ttm"``.
+    ``reason`` — why the value is absent (see ``MissingReason``).
+    ``detail`` — optional human-readable context for diagnostics.
+    """
+
+    model:  str
+    field:  str
     reason: MissingReason
-    field: str
-    detail: str = ""
-
-    def __repr__(self) -> str:
-        return f"Missing({self.field!r}: {self.reason.value})"
-
-    @property
-    def is_source_gap(self) -> bool:
-        return self.reason == MissingReason.DATA_SOURCE_GAP
-
-    @property
-    def is_invalid_input(self) -> bool:
-        return self.reason == MissingReason.INVALID_INPUT
-
-    @property
-    def is_derived_gap(self) -> bool:
-        return not self.is_source_gap and not self.is_invalid_input
+    detail: Optional[str] = None
