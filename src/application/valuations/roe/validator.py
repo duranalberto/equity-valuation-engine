@@ -10,6 +10,17 @@ from domain.valuation.policies import (
     ValuationCheckResult,
 )
 
+# ---------------------------------------------------------------------------
+# BUG-8 fix + DESIGN-2 fix: unified block threshold = 6 (was 7).
+#
+# Negative ROE produces a negative terminal income → negative required_value
+# → negative intrinsic value → misleading "overvalued" signal.
+# Weight set to 99 (hard-block sentinel) so the model never runs on
+# negative ROE regardless of other factor scores.
+# ---------------------------------------------------------------------------
+_SCORE_BLOCK_THRESHOLD = 6
+_NEGATIVE_ROE_WEIGHT   = 99
+
 
 class ROEChecker(ValuationChecker):
 
@@ -26,12 +37,15 @@ class ROEChecker(ValuationChecker):
         self._factors: List[CheckFactor] = []
         self._score = 0
 
-    def _add_factor(self, name, message, severity, value=None):
-        weight = (
-            self.CRITICAL_WEIGHT if severity == FactorSeverity.CRITICAL
-            else self.WARNING_WEIGHT if severity == FactorSeverity.WARNING
-            else 0
-        )
+    def _add_factor(self, name, message, severity, value=None, weight_override=None):
+        if weight_override is not None:
+            weight = weight_override
+        else:
+            weight = (
+                self.CRITICAL_WEIGHT if severity == FactorSeverity.CRITICAL
+                else self.WARNING_WEIGHT if severity == FactorSeverity.WARNING
+                else 0
+            )
         self._factors.append(
             CheckFactor(name=name, message=message, severity=severity, weight=weight, value=value)
         )
@@ -54,20 +68,21 @@ class ROEChecker(ValuationChecker):
         score = self._score
         if score == 0:
             return True,  "Highly suitable for ROE-based valuation."
-        elif 1 <= score <= 3:
+        elif 1 <= score <= 2:
             return True,  "Minor warnings, generally suitable for ROE-based models."
-        elif 4 <= score <= 7:
-            return False, "Moderate concerns, ROE may be distorted or unsustainable."
+        elif 3 <= score <= 5:
+            return True,  "Minor concerns, interpret ROE result carefully."
+        elif score == _NEGATIVE_ROE_WEIGHT:
+            return False, (
+                "ROE valuation invalid: Return on Equity is negative. "
+                "Negative ROE produces a negative terminal income and negative intrinsic "
+                "value, which is meaningless as an equity valuation. "
+                "Use DCF or P/E models instead."
+            )
         else:
             return False, "Significant risk, ROE valuation is unreliable."
 
     def _check_shares_outstanding(self):
-        """
-        Verify shares_outstanding is present and positive.
-
-        ``execute_roe_scenarios`` calls ``safe_div(dividends, shares)`` which
-        returns ``None`` when shares is zero, then raises ``ValueError``.
-        """
         market_data = self._metrics.market_data
         shares = market_data.shares_outstanding if market_data else 0
         if shares <= 0:
@@ -86,13 +101,28 @@ class ROEChecker(ValuationChecker):
         roe           = ratios.return_on_equity if ratios else 0.0
         total_equity  = balance_sheet.total_equity
 
-        if roe <= 0:
-            sev = self._missing_severity("Ratios", "return_on_equity") \
-                if roe == 0.0 else FactorSeverity.CRITICAL
+        # BUG-8 fix: negative ROE hard-blocks the model with weight=99.
+        # Zero ROE is treated as missing (CRITICAL weight=3, may still block).
+        if roe < 0:
             self._add_factor(
-                "Non-Positive ROE",
-                f"Return on Equity (ROE) is zero, negative, or missing: {roe}. "
-                "ROE-based valuation is invalid.",
+                "Negative ROE — Model Invalid",
+                f"Return on Equity is {roe:.2%}. Negative ROE makes the ROE valuation "
+                f"mathematically invalid: terminal income = ROE × equity_year_N < 0, "
+                f"producing a negative intrinsic value. "
+                f"Net income (TTM) = {financials.net_income_ttm:,.0f}. "
+                f"Use DCF or P/E models for loss-making companies.",
+                FactorSeverity.CRITICAL,
+                roe,
+                weight_override=_NEGATIVE_ROE_WEIGHT,
+            )
+            return  # no point adding further profitability sub-checks
+
+        if roe == 0.0:
+            sev = self._missing_severity("Ratios", "return_on_equity")
+            self._add_factor(
+                "Zero/Missing ROE",
+                f"Return on Equity (ROE) is zero or missing: {roe}. "
+                "ROE-based valuation may be unreliable.",
                 sev,
                 roe,
             )
@@ -130,10 +160,8 @@ class ROEChecker(ValuationChecker):
             )
 
     def _check_asset_quality(self):
-        ratios              = self._metrics.ratios
-        return_on_assets    = ratios.return_on_assets if ratios else 0.0
-        # Only flag when ROA is genuinely low (non-zero but below threshold);
-        # 0.0 is handled by the registry / profitability check above.
+        ratios           = self._metrics.ratios
+        return_on_assets = ratios.return_on_assets if ratios else 0.0
         if return_on_assets != 0.0 and return_on_assets < 0.05:
             self._add_factor(
                 "Low Return on Assets (ROA)",
@@ -142,11 +170,61 @@ class ROEChecker(ValuationChecker):
                 return_on_assets,
             )
 
+    def _check_buyback_dominance(self):
+        """
+        BUG-13 fix: inform user when buybacks dominate over dividends so they
+        understand the ROE model will use total shareholder yield (div + buyback)
+        as the distribution component.
+        """
+        cf     = self._metrics.cash_flow
+        ratios = self._metrics.ratios
+        dividends = abs(cf.dividends_paid_ttm)
+        buybacks  = abs(cf.share_buybacks_ttm)
+
+        if buybacks > 0 and dividends == 0:
+            bby = ratios.buyback_yield if ratios else 0.0
+            self._add_factor(
+                "Buyback-Only Capital Return",
+                f"Company pays no dividends but repurchased {buybacks/1e9:.1f}B TTM "
+                f"(buyback yield {bby:.2%}). The ROE model will include buyback yield "
+                f"({bby:.2%}) as the per-share distribution component in place of dividends. "
+                f"This improves accuracy for capital-return companies.",
+                FactorSeverity.INFO,
+                buybacks,
+                weight_override=0,
+            )
+        elif buybacks > 2 * dividends and dividends > 0:
+            tsy = ratios.total_shareholder_yield if ratios else 0.0
+            self._add_factor(
+                "Buybacks Dominate Dividends",
+                f"Share buybacks ({buybacks/1e9:.1f}B) are more than 2× dividends "
+                f"({dividends/1e9:.1f}B). Total shareholder yield used: {tsy:.2%}.",
+                FactorSeverity.INFO,
+                buybacks,
+                weight_override=0,
+            )
+
     def evaluate(self) -> ValuationCheckResult:
         self._check_shares_outstanding()
         self._check_profitability_and_return()
+        # Short-circuit: if the hard-block sentinel was triggered (negative ROE)
+        # all further checks are irrelevant — the model is unconditionally invalid.
+        if self._score >= _NEGATIVE_ROE_WEIGHT:
+            return ValuationCheckResult(
+                ticker=self._metrics.profile.ticker,
+                is_suitable=False,
+                total_severity_score=self._score,
+                interpretation=(
+                    "ROE valuation invalid: Return on Equity is negative. "
+                    "Negative ROE produces a negative terminal income and negative intrinsic "
+                    "value, which is meaningless as an equity valuation. "
+                    "Use DCF or P/E models instead."
+                ),
+                factors=self._factors,
+            )
         self._check_leverage()
         self._check_asset_quality()
+        self._check_buyback_dominance()
         is_suitable, interpretation = self._interpret_score()
         return ValuationCheckResult(
             ticker=self._metrics.profile.ticker,

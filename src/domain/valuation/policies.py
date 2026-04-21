@@ -1,8 +1,6 @@
-from typing import List, Optional, Protocol, Union, runtime_checkable
 from dataclasses import dataclass
 from enum import Enum
-
-from domain.metrics.stock import StockMetrics
+from typing import List, Optional, Protocol, Union, runtime_checkable
 
 
 class FactorSeverity(Enum):
@@ -34,18 +32,11 @@ class ValuationChecker(Protocol):
     """
     Protocol that all suitability-checker classes must satisfy.
 
-    ``registry`` is optional so that callers which do not need
-    reason-differentiated severity can omit it.  All three concrete
-    implementations (``DCFChecker``, ``PEChecker``, ``ROEChecker``) accept
-    ``(stock_metrics, registry=None)`` and satisfy this protocol.
+    Construction signature compatibility is intentional but not
+    runtime-enforceable through the Protocol.  All concrete implementations
+    (``DCFChecker``, ``PEChecker``, ``ROEChecker``) accept
+    ``(stock_metrics, registry=None)`` by convention.
     """
-
-    def __init__(
-        self,
-        stock_metrics: StockMetrics,
-        registry=None,      # Optional[MissingValueRegistry] — kept untyped here
-    ) -> None:              # to avoid a circular import through domain/core
-        ...
 
     def evaluate(self) -> ValuationCheckResult:
         ...

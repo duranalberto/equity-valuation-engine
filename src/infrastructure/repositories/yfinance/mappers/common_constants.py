@@ -17,6 +17,8 @@ INFO_LABELS = {
     "beta":               "beta",
     "eps_ttm":            "trailingEps",
     "pe_ttm":             "trailingPE",
+    "last_quarter_eps":   "__last_quarter_eps__",
+    "last_year_eps":      "__last_year_eps__",
     "low_52_week":        "fiftyTwoWeekLow",
     "high_52_week":       "fiftyTwoWeekHigh",
     "fifty_day_avg":      "fiftyDayAverage",

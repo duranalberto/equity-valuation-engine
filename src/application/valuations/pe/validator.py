@@ -10,6 +10,12 @@ from domain.valuation.policies import (
     ValuationCheckResult,
 )
 
+# ---------------------------------------------------------------------------
+# BUG-9 fix + DESIGN-2 fix: unified block threshold = 6 (was 7).
+# pe_ttm is now Optional[float]; every comparison guarded against None.
+# ---------------------------------------------------------------------------
+_SCORE_BLOCK_THRESHOLD = 6
+
 
 class PEChecker(ValuationChecker):
 
@@ -54,22 +60,17 @@ class PEChecker(ValuationChecker):
         score = self._score
         if score == 0:
             return True,  "Perfectly suitable for P/E valuation (requires positive EPS)."
-        elif 1 <= score <= 3:
+        elif 1 <= score <= 2:
             return True,  "Minor warnings, generally suitable for P/E."
-        elif 4 <= score <= 7:
-            return False, "Moderate concerns, P/E ratio may be distorted."
+        elif 3 <= score <= 5:
+            return True,  "Minor concerns, interpret P/E result carefully."
         else:
             return False, "Significant risk, P/E valuation is unreliable or invalid."
 
     def _check_valuation_inputs(self):
         """
-        Verify that ``median_historical_pe`` is available.
-
-        This is a pre-execution firewall: ``pe_valuation()`` multiplies EPS
-        directly by ``median_historical_pe``.  A ``None`` value (the only
-        remaining Optional float in ``Valuation``) would raise ``TypeError``
-        at runtime; a ``0.0`` would silently produce zero intrinsic values.
-        Blocking here is the correct place to surface this.
+        Firewall: block if median_historical_pe is None.
+        pe_ttm is Optional[float] — guard all comparisons (BUG-9 fix).
         """
         median_pe = self._metrics.valuation.median_historical_pe
         if median_pe is None:
@@ -87,7 +88,8 @@ class PEChecker(ValuationChecker):
     def _check_earnings_stability(self):
         market_data = self._metrics.market_data
         eps_ttm = market_data.eps_ttm if market_data else 0.0
-        pe_ttm  = market_data.pe_ttm  if market_data else 0.0
+        # BUG-9 fix: pe_ttm is Optional[float]; never compare None to int/float
+        pe_ttm  = market_data.pe_ttm  if market_data else None
 
         if eps_ttm <= 0:
             sev = self._missing_severity("MarketData", "eps_ttm") \
@@ -99,7 +101,14 @@ class PEChecker(ValuationChecker):
                 eps_ttm,
             )
 
-        if pe_ttm == 0.0:
+        # Guard: only evaluate pe_ttm when it is a real number
+        if pe_ttm is None:
+            self._add_factor(
+                "Missing P/E (TTM)",
+                "P/E (TTM) ratio is unavailable (likely due to negative EPS). Cannot perform P/E valuation.",
+                FactorSeverity.CRITICAL,
+            )
+        elif pe_ttm == 0.0:
             sev = self._missing_severity("MarketData", "pe_ttm")
             self._add_factor(
                 "Missing P/E (TTM)",
@@ -115,9 +124,9 @@ class PEChecker(ValuationChecker):
             )
 
     def _check_growth_metrics(self):
-        financials         = self._metrics.financials
-        ratios             = self._metrics.ratios
-        net_income_growth  = financials.net_income_growth
+        financials        = self._metrics.financials
+        ratios            = self._metrics.ratios
+        net_income_growth = financials.net_income_growth
 
         if net_income_growth <= 0:
             self._add_factor(
@@ -157,7 +166,7 @@ class PEChecker(ValuationChecker):
             )
 
     def evaluate(self) -> ValuationCheckResult:
-        self._check_valuation_inputs()   # firewall: blocks if median_pe is None
+        self._check_valuation_inputs()
         self._check_earnings_stability()
         self._check_growth_metrics()
         self._check_balance_sheet()

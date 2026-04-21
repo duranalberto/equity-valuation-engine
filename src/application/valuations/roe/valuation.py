@@ -39,7 +39,7 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
         equity_per_share = equity_per_share * (1 + growth_rate)
 
         dividend *= (1 + growth_rate)
-        npv_dividend = dividend / ((1 + pm.discount_rate) ** (year - 1))
+        npv_dividend = dividend / ((1 + pm.discount_rate) ** year)
         equity_per_share_progression.append(equity_per_share)
         dividend_progression.append(dividend)
         npv_dividend_progression.append(npv_dividend)

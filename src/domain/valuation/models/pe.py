@@ -8,6 +8,12 @@ from domain.valuation.base import ValuationParams, ValuationReport
 
 @dataclass
 class PEParameters(ValuationParams):
+    """
+    Parameters for P/E valuation.
+
+    ``discount_rate`` is a concrete field here — it is the rate used to
+    discount future EPS-based value back to the present.
+    """
     discount_rate: float = 0.09
 
 

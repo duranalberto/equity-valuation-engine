@@ -12,26 +12,16 @@ logger = logging.getLogger(__name__)
 
 class YfinanceParser:
     """
-    Higher-level extraction methods for info-dict and price/EPS data.
+    Higher-level extraction for info-dict and price/EPS data.
 
-    This class handles two categories of data that cannot be served by the
-    generic ``dataframe_utils`` path:
-
-    1. **Info-dict fields** — values read from ``ticker.info`` (company name,
-       sector, current price, shares outstanding, etc.) that may require
-       fallback logic between ``fast_info`` and ``info`` sources.
-
-    2. **Price and EPS history** — computed from the 5-year price history
-       DataFrame and annual income-statement series respectively.
-
-    All financial statement data (income statement, balance sheet, cash flow)
-    is routed directly through ``YfinanceDataLoader`` → ``dataframe_utils``
-    without passing through this class.
+    BUG-9 fix: pe_ttm() now returns None when the value is absent or
+    non-numeric (e.g. companies with negative EPS have no P/E ratio in
+    yfinance).  MarketData.pe_ttm is typed Optional[float] to match.
+    PEChecker guards all comparisons against None so no TypeError can occur.
     """
 
     def __init__(self, fetcher: YfinanceFetcher) -> None:
         self._f = fetcher
-
 
     def ticker(self) -> Optional[str]:
         return self._f.get_info(INFO_LABELS["ticker"])
@@ -95,9 +85,53 @@ class YfinanceParser:
         raw = self._f.get_info(INFO_LABELS["eps_ttm"])
         return float(raw) if raw is not None else None
 
+    def last_quarter_eps(self) -> Optional[float]:
+        """
+        Return the most recent quarterly EPS, derived from quarterly net income
+        divided by shares outstanding.
+        """
+        ni_series = self._f.income_series_quarterly(INCOME_STMT_LABELS["net_income"])
+        shares = self.shares_outstanding()
+        if not ni_series or not shares:
+            return None
+
+        from calculations.common import safe_div
+
+        latest_net_income = ni_series[-1]
+        return safe_div(latest_net_income, float(shares))
+
+    def last_year_eps(self) -> Optional[float]:
+        """
+        Return the most recent annual EPS, derived from annual net income
+        divided by shares outstanding.
+        """
+        ni_series = self._f.income_series_annual(INCOME_STMT_LABELS["net_income"])
+        shares = self.shares_outstanding()
+        if not ni_series or not shares:
+            return None
+
+        from calculations.common import safe_div
+
+        latest_net_income = ni_series[-1]
+        return safe_div(latest_net_income, float(shares))
+
     def pe_ttm(self) -> Optional[float]:
+        """
+        BUG-9 fix: return None (not 0.0) when P/E is absent.
+
+        yfinance returns None for trailingPE on companies with negative or
+        zero EPS (no meaningful P/E exists).  Returning 0.0 here would cause
+        PEChecker._check_earnings_stability to compare 0.0 > 40 and 0.0 == 0.0,
+        silently treating a missing P/E as a zero P/E.  Returning None lets the
+        checker detect the absence explicitly and emit the correct factor.
+        """
         raw = self._f.get_info(INFO_LABELS["pe_ttm"])
-        return float(raw) if raw is not None else None
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
 
     def low_52_week(self) -> Optional[float]:
         raw = self._f.get_fast_info("year_low")
@@ -129,7 +163,6 @@ class YfinanceParser:
         raw = self._f.get_info(INFO_LABELS.get("avg_volume", "averageVolume"))
         return int(raw) if raw else None
 
-
     def price_history(self) -> Optional[List[float]]:
         return self._f.price_series()
 
@@ -137,13 +170,6 @@ class YfinanceParser:
         return self._f.highest_price()
 
     def eps_history(self) -> Optional[List[float]]:
-        """
-        Build a per-year EPS series from annual net-income ÷ shares-outstanding.
-
-        Uses ``income_series_annual`` from the fetcher — the only statement
-        accessor that remains live after the statement-numeric methods were
-        removed (those were bypassed by the dataframe_utils path in the loader).
-        """
         ni_series = self._f.income_series_annual(INCOME_STMT_LABELS["net_income"])
         shares    = self.shares_outstanding()
         if not ni_series or not shares:

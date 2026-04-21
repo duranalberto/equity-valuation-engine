@@ -152,8 +152,14 @@ class YfinanceDataLoader:
                     "YfSeriesField with an explicit Statement enum value."
                 )
 
-    # Mapping from info-dict key → YfinanceParser method name.
-    # Only info-dict (non-statement) fields are routed through the parser.
+    # Mapping from info-dict key (or sentinel string) → YfinanceParser method name.
+    # Only info-dict and EPS-derived fields are routed through the parser.
+    #
+    # ``last_quarter_eps`` and ``last_year_eps`` use sentinel keys defined in
+    # INFO_LABELS (``__last_quarter_eps__`` / ``__last_year_eps__``) so they
+    # are never accidentally passed to ``ticker.info.get()``.  The parser
+    # methods read from the quarterly/annual income-statement DataFrames and
+    # return period-specific values distinct from the trailing ``eps_ttm``.
     _INFO_LABEL_TO_PARSER_METHOD = {
         INFO_LABELS["ticker"]:              "ticker",
         INFO_LABELS["company_name"]:        "company_name",
@@ -170,6 +176,8 @@ class YfinanceDataLoader:
         INFO_LABELS["beta"]:                "beta",
         INFO_LABELS["eps_ttm"]:             "eps_ttm",
         INFO_LABELS["pe_ttm"]:              "pe_ttm",
+        INFO_LABELS["last_quarter_eps"]:    "last_quarter_eps",
+        INFO_LABELS["last_year_eps"]:       "last_year_eps",
         INFO_LABELS["low_52_week"]:         "low_52_week",
         INFO_LABELS["high_52_week"]:        "high_52_week",
         INFO_LABELS["fifty_day_avg"]:       "fifty_day_avg",

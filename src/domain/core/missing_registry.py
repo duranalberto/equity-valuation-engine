@@ -17,15 +17,15 @@ class MissingValueRegistry:
 
     Two internal buckets
     --------------------
-    ``_raw``     — source-level misses recorded by ``get_from_field()`` when
+    ``_raw``     — source-level misses recorded by ``_get_field_value()`` when
                    the data loader returns ``None``.  Stable after the loader
                    phase completes.
 
-    ``_derived`` — formula-level misses recorded by ``_post_build_audit()``
-                   after ``_rebuild_derived()`` has run for the final time.
-                   Cleared by ``clear_derived()`` before the second rebuild
-                   pass so stale first-pass entries do not pollute the final
-                   registry state.
+    ``_derived`` — formula-level misses recorded by ``record_derived()`` after
+                   ``_rebuild_derived()`` has run.  Populated from
+                   ``BuildDiagnostic`` entries emitted by ``Valuation.build()``
+                   and ``Ratios.build()``, then fed into the registry by
+                   ``MetricsLoader.build_stock_metrics()``.
     """
 
     def __init__(self) -> None:
@@ -49,18 +49,8 @@ class MissingValueRegistry:
         reason: MissingReason,
         detail: Optional[str] = None,
     ) -> None:
-        """Record a formula-level miss (called from ``_post_build_audit``)."""
+        """Record a formula-level miss (called from ``build_stock_metrics``)."""
         self._derived.append(MissingField(model, field, reason, detail))
-
-    def clear_derived(self) -> None:
-        """
-        Discard all derived-field entries.
-
-        Called by ``MetricsLoader.build_stock_metrics()`` immediately before
-        the second ``_rebuild_derived()`` pass so stale first-pass entries
-        (computed without history) do not appear in the final registry.
-        """
-        self._derived.clear()
 
     def get(self, model: str, field: str) -> Optional[MissingField]:
         """Return the first matching entry across both buckets, or ``None``."""

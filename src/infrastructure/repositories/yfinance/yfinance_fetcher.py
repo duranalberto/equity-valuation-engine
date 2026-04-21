@@ -21,16 +21,18 @@ class YfinanceFetcher:
     * **Info-dict access** — ``get_info`` and ``get_fast_info`` for fields
       sourced from ``ticker.info`` / ``ticker.fast_info``.
 
-    * **Annual net-income series** — ``income_series_annual`` is the single
-      statement accessor retained here because ``YfinanceParser.eps_history``
-      needs it to build the per-year EPS series used in ``Valuation.build``.
+    * **Income-statement series** — ``income_series_quarterly`` and
+      ``income_series_annual`` expose the quarterly and annual income-statement
+      DataFrames as typed series.  ``income_series_annual`` is used by
+      ``YfinanceParser.eps_history`` and ``last_year_eps``;
+      ``income_series_quarterly`` is used by ``last_quarter_eps``.
 
     * **Price series** — ``price_series`` and ``highest_price`` for historical
       price data.
 
-    All other statement data (income, balance sheet, cash flow) is accessed
-    directly from ``RawTickerData`` by ``YfinanceDataLoader`` via
-    ``dataframe_utils``, so no additional statement accessors are needed here.
+    All other statement data (balance sheet, cash flow) is accessed directly
+    from ``RawTickerData`` by ``YfinanceDataLoader`` via ``dataframe_utils``,
+    so no additional statement accessors are needed here.
     """
 
     def __init__(self, raw: RawTickerData) -> None:
@@ -48,10 +50,18 @@ class YfinanceFetcher:
         return getattr(self._raw.fast_info, key, default)
 
 
+    def income_series_quarterly(
+        self,
+        label: Union[str, List[str]],
+    ) -> Optional[List[float]]:
+        """Return values oldest→newest from the quarterly income statement."""
+        return get_series(self._raw.income_stmt_q, label, ascending=True)
+
     def income_series_annual(
         self,
         label: Union[str, List[str]],
     ) -> Optional[List[float]]:
+        """Return values oldest→newest from the annual income statement."""
         return get_series(self._raw.income_stmt_a, label, ascending=True)
 
 

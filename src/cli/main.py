@@ -32,16 +32,13 @@ CLI_PRESENTERS: Dict[Type[ValuationManager], Callable] = {
     ROEManager: roe_print,
 }
 
+# DESIGN-2 fix: unified skip threshold across all models.
+# Old value was 10 (too permissive — two CRITICAL flags only scored 6).
+# New value is 6: two CRITICAL flags (weight=3 each) = score 6 → blocked.
+_VALUATION_SKIP_THRESHOLD = 6
+
 
 def fetch_stock_metrics(ticker: str) -> Tuple[StockMetrics, MissingValueRegistry]:
-    """
-    Load stock metrics and return them together with the ``MissingValueRegistry``
-    populated during the build.
-
-    The registry is always created — callers that don't need diagnostics can
-    ignore it.  Downstream code (suitability checkers) uses the registry to
-    produce reason-differentiated factor severity.
-    """
     registry = MissingValueRegistry()
     try:
         metrics = MetricsLoader(ticker, registry=registry).build_stock_metrics()
@@ -102,7 +99,8 @@ def run_valuation(
     method_name = manager_cls.__name__.replace("Manager", "").upper()
     check_result = run_suitability_check(manager, method_name, registry)
 
-    if check_result.total_severity_score > 10:
+    # DESIGN-2 fix: use unified threshold (was hardcoded 10, now _VALUATION_SKIP_THRESHOLD=6)
+    if check_result.total_severity_score >= _VALUATION_SKIP_THRESHOLD:
         logger.warning(
             "--- %s valuation skipped due to high severity score: %d (%s) ---",
             method_name, check_result.total_severity_score, check_result.interpretation,

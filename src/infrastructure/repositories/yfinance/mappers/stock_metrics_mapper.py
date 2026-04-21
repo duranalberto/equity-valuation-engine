@@ -102,8 +102,11 @@ def _make_market_data_mapper() -> GenericMapper:
             "beta":                YfLabelField(INFO_LABELS["beta"]),
             "eps_ttm":             YfLabelField(INFO_LABELS["eps_ttm"]),
             "pe_ttm":              YfLabelField(INFO_LABELS["pe_ttm"]),
-            "last_quarter_eps":    YfLabelField(INFO_LABELS["eps_ttm"]),
-            "last_year_eps":       YfLabelField(INFO_LABELS["eps_ttm"]),
+            # last_quarter_eps and last_year_eps use sentinel keys that route
+            # through YfinanceParser.last_quarter_eps() / last_year_eps()
+            # rather than reading the same trailingEps value from ticker.info.
+            "last_quarter_eps":    YfLabelField(INFO_LABELS["last_quarter_eps"]),
+            "last_year_eps":       YfLabelField(INFO_LABELS["last_year_eps"]),
             "low_52_week":         YfLabelField(INFO_LABELS["low_52_week"]),
             "high_52_week":        YfLabelField(INFO_LABELS["high_52_week"]),
             "fifty_day_avg":       YfLabelField(INFO_LABELS["fifty_day_avg"]),

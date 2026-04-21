@@ -1,13 +1,20 @@
 import json
-from dataclasses import is_dataclass, fields
-from typing import Any, Optional
+from dataclasses import fields, is_dataclass
 from enum import Enum
+from typing import Any, Optional
+
+# Fields excluded from JSON output.  ``historical_data`` holds up to ~1,250
+# price floats that are a build-time artifact (used to compute Valuation
+# scalars) and add no value to downstream consumers of the serialised output.
+_EXCLUDED_FIELDS = frozenset({"historical_data"})
 
 
 def _dataclass_tree_to_dict(obj: Any) -> Any:
     if is_dataclass(obj):
         result = {}
         for f in fields(obj):
+            if f.name in _EXCLUDED_FIELDS:
+                continue
             value = getattr(obj, f.name)
             result[f.name] = _dataclass_tree_to_dict(value)
         return result

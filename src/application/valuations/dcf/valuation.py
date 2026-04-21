@@ -36,8 +36,17 @@ def create_fcf_projections(
 def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
     sm = input.stock_metrics
 
+    fcf_seed = sm.cash_flow.fcf_ttm
+    fcf_seed_source = "raw"
+
+    # BUG-5 fix: when a capex spike has been detected use the normalized FCF
+    # as the DCF seed instead of the raw (distorted) FCF_ttm.
+    if sm.valuation.capex_spike_detected and sm.valuation.normalized_fcf is not None:
+        fcf_seed = sm.valuation.normalized_fcf
+        fcf_seed_source = "normalized"
+
     fcf_projections = create_fcf_projections(
-        initial_fcf=sm.cash_flow.fcf_ttm,
+        initial_fcf=fcf_seed,
         growth_rates=input.growth_rates,
     )
 
@@ -47,7 +56,6 @@ def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
         input.params.terminal_growth_rate,
     )
 
-    # total_debt and cash_and_equivalents are float = 0.0 — no None guards needed.
     equity_value = (
         dcf_output.enterprise_value
         - sm.balance_sheet.total_debt
@@ -80,6 +88,7 @@ def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
         growth_rates=input.growth_rates,
         valuation_status=valuation_status,
         fcf_projections=fcf_projections,
+        fcf_seed_source=fcf_seed_source,
         dcf=dcf_output,
         intrinsic_value_per_share=intrinsic_value,
         implied_wacc=implied_wacc,
@@ -92,17 +101,7 @@ def _compute_sensitivity(
     wacc_values: List[float],
     terminal_growth_values: List[float],
 ) -> List[List[Optional[float]]]:
-    """
-    Build a 2-D intrinsic-value-per-share matrix.
-
-    Rows  → wacc_values (ascending)
-    Cols  → terminal_growth_values (ascending)
-
-    A cell is ``None`` when WACC ≤ terminal_growth_rate (Gordon Growth Model
-    is undefined) or when the resulting equity value would be nonsensical.
-    """
     matrix: List[List[Optional[float]]] = []
-    # total_debt and cash are float = 0.0 — direct access, no None fallback needed.
     total_debt = stock_metrics.balance_sheet.total_debt
     cash       = stock_metrics.balance_sheet.cash_and_equivalents
     shares     = stock_metrics.market_data.shares_outstanding
@@ -114,9 +113,7 @@ def _compute_sensitivity(
                 row.append(None)
                 continue
             try:
-                dcf_out = compute_discounted_cash_flow(
-                    base_fcf_projections, wacc_rate, tgr
-                )
+                dcf_out = compute_discounted_cash_flow(base_fcf_projections, wacc_rate, tgr)
                 equity_value = dcf_out.enterprise_value - total_debt + cash
                 iv = intrinsic_value_per_share(equity_value, shares)
                 row.append(round(iv, 4))
@@ -132,10 +129,12 @@ def build_sensitivity_report(
     base_wacc: float,
     base_terminal_growth: float,
     scenario_name: str = "Base",
-    wacc_steps: int = 5,
+    wacc_steps: int = 7,
     tgr_steps: int = 5,
-    wacc_spread: float = 0.02,
-    tgr_spread: float = 0.01,
+    # BUG-11 fix: widened from ±1pp to ±2pp WACC and ±0.5pp to ±1pp TGR
+    # so the table captures the realistic estimation error range.
+    wacc_spread: float = 0.04,
+    tgr_spread: float = 0.02,
 ) -> DCFSensitivityReport:
     def _axis(centre: float, spread: float, steps: int) -> List[float]:
         if steps <= 1:
@@ -173,7 +172,7 @@ def execute_dcf_scenarios(
 
     cost_of_equity = cost_of_equity_capm(
         risk_free_rate=params.risk_free_rate,
-        beta=stock_metrics.market_data.beta,       # float = 1.0 default — never None
+        beta=stock_metrics.market_data.beta,
         market_risk_premium=params.market_risk_premium,
     )
 
