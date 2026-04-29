@@ -1,91 +1,81 @@
-# Finance Project Overview
+# Equity Valuation Engine
 
-This project provides a modular toolkit for extracting financial data, computing derived financial metrics, and generating several forms of equity valuation. Its core objective is to obtain raw financial information from external providers, transform it into standardized financial metrics, and apply valuation methodologies such as DCF, ROE-driven intrinsic value, and PE-based fair price estimations.
+A Python equity valuation engine that fetches market and financial statement
+data, builds normalized stock metrics, runs valuation suitability checks, and
+produces intrinsic valuation reports.
 
-Each valuation relies on a shared data access interface and a common set of calculated metrics, ensuring consistency and enabling multiple valuation models to coexist and evolve.
+## Supported Models
 
-## Financial Data Extraction
+- DCF
+- P/E
+- ROE
+- EV/EBITDA
+- P/S
+- DDM
+- NAV
+- Reverse DCF diagnostics
 
-The project retrieves financial data through a repository abstraction that returns primitive financial values such as revenue figures, EPS history, cash flow values, and price history. Each repository implementation adheres to a common protocol, allowing the rest of the system to operate independently of the external data source.
+Reverse DCF is opt-in and diagnostic; it is included in JSON output when
+requested but excluded from the composite intrinsic value.
 
-### How Metrics Extraction Works
+## Installation
 
-Metrics extraction follows a consistent pattern:
+To install for development:
 
-1. The repository delivers raw financial primitives.
-2. Metric loaders access these values and assemble higher-level representations such as:
+```bash
+python -m pip install -e .
+```
 
-   * Trailing twelve months results (TTM)
-   * Annual values for revenue, EPS, cash flows, and margins
-   * Historical price sequences
-   * Dividend information
-3. These extracted fields are then processed by calculators to generate derived metrics used by valuation engines.
+To install test tooling:
 
-This approach ensures a clean separation between raw data retrieval and the financial logic applied to it.
+```bash
+python -m pip install -e ".[test]"
+```
 
-## Computed Data and Derived Metrics
+### Import as a package from GitHub
 
-The project includes a set of financial calculation modules responsible for producing metrics required by valuation models. These calculations operate only on primitives returned by the repository and include:
+You can install this engine directly into other projects without publishing it to PyPI. Use:
 
-* Growth rate calculations for revenue, EPS, or cash flows
-* Discounting operations for DCF valuation
-* Profitability metrics such as margins and return on equity
-* Cost of capital and WACC computations
-* Dividend-related ratios
+```bash
+pip install git+https://github.com/duranalberto/equity-valuation-engine.git
+```
 
-The calculated metrics become the foundation for all valuations, ensuring that each valuation engine receives consistent, domain-relevant inputs.
+## CLI Usage
 
-## Valuation Models
+Run the CLI as a module:
 
-The project currently supports several valuation approaches, each with its own parameterization, calculation workflow, and interpretation of the extracted metrics.
+```bash
+python -m cli.main ORCL --json
+python -m cli.main ORCL --cli
+python -m cli.main ORCL --all
+python -m cli.main ORCL --json --reverse-dcf
+```
 
-### Discounted Cash Flow (DCF)
+Output modes:
 
-The DCF valuation estimates intrinsic value by forecasting future free cash flows, discounting them by the appropriate cost of capital, and computing a terminal value. The process includes:
+- `--json` emits one parseable JSON object.
+- `--cli` emits human-readable tables.
+- `--all` emits CLI tables followed by one final JSON document.
 
-* Extracting and computing cash flow history and growth
-* Estimating future cash flows based on provided assumptions
-* Discounting projected flows
-* Summing discounted flows and terminal value
+## Project Shape
 
-### Return on Equity (ROE) Based Valuation
+The engine is organized around:
 
-The ROE valuation builds on profitability metrics to project future earnings and potential reinvestment outcomes. It evaluates a stock's intrinsic price based on:
+- yfinance-backed data loading
+- `StockMetrics` domain models
+- missing-data diagnostics
+- valuation managers and validators
+- CLI presenters and JSON serialization
+- sector and scenario assumptions in `src/config/valuations/`
 
-* Historical and computed ROE values
-* Growth expectations derived from reinvestment and profitability
-* Discounted future earnings trajectories
+See [docs/README.md](docs/README.md) for architecture notes, model summaries,
+configuration guidance, and limitations.
 
-### Price-Earnings (PE) Valuation
+## Testing
 
-The PE-based model estimates a fair price by comparing the stock's EPS and growth projections to expected valuation multiples. It relies on:
+```bash
+pytest -q
+```
 
-* Recent EPS and EPS history
-* Calculated forward-looking EPS estimates based on growth
-* A target PE ratio for the valuation horizon
-
-## yfinance-Based Repository Implementation
-
-One repository implementation uses the `yfinance` library to extract financial statements, cash flow data, price history, and other quantitative indicators directly from Yahoo Finance. The implementation transforms `yfinance` response objects and DataFrames into the primitives defined by the repository protocol.
-
-The project intentionally isolates this implementation within its own module so that:
-
-* The core codebase does not depend on `yfinance` specifics
-* Additional data providers can be added later without modifying valuation or calculation logic
-
-## CLI Usage and Input Data
-
-The command-line interface provides a simple mechanism for running valuations and extracting metrics for a single stock. The CLI accepts inputs such as:
-
-* A stock ticker symbol
-* Valuation-specific parameter overrides
-* Output format preferences (e.g., JSON or formatted output)
-
-Typical CLI flow:
-
-1. User specifies ticker and valuation method.
-2. The CLI initializes the appropriate repository.
-3. The CLI constructs the selected valuation engine and its parameters.
-4. Valuation results or metric summaries are displayed.
-
-The CLI is built to enable straightforward interaction while maintaining flexibility for future expansions, including batch stock valuation or comparative analysis.
+Valuation outputs are analytical estimates based on available data and
+configuration assumptions. They are not investment advice.

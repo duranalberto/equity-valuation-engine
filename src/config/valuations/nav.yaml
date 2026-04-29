@@ -1,0 +1,65 @@
+# nav.yaml — NAV asset haircut parameters
+#
+# Used by MODEL-4 (Asset-Based / Net Asset Value).
+#
+# asset_haircut: fraction of total_assets retained after marking to market.
+#   Bear = conservative liquidation scenario (higher haircut = lower value)
+#   Base = going-concern fair-value estimate
+#   Bull = optimistic strategic/replacement value
+#
+# intangible_cap: maximum intangible % of total_assets before a CRITICAL
+#   warning is emitted (intangibles have near-zero liquidation value).
+#
+# Keys must match domain.core.enums.Sectors values exactly.
+
+asset_haircut:
+  bear:
+    basic-materials:        0.65
+    communication-services: 0.55
+    consumer-cyclical:      0.60
+    consumer-defensive:     0.70
+    energy:                 0.60
+    financial-services:     0.75
+    healthcare:             0.65
+    industrials:            0.65
+    real-estate:            0.75
+    technology:             0.50
+    utilities:              0.70
+  base:
+    basic-materials:        0.80
+    communication-services: 0.70
+    consumer-cyclical:      0.75
+    consumer-defensive:     0.85
+    energy:                 0.75
+    financial-services:     0.88
+    healthcare:             0.80
+    industrials:            0.80
+    real-estate:            0.90
+    technology:             0.65
+    utilities:              0.85
+  bull:
+    basic-materials:        0.95
+    communication-services: 0.88
+    consumer-cyclical:      0.90
+    consumer-defensive:     1.00
+    energy:                 0.90
+    financial-services:     1.00
+    healthcare:             0.95
+    industrials:            0.95
+    real-estate:            1.05
+    technology:             0.85
+    utilities:              1.00
+
+# Intangible asset cap — warn when (goodwill + intangibles) / total_assets > threshold
+intangible_cap:
+  basic-materials:        0.25
+  communication-services: 0.40
+  consumer-cyclical:      0.30
+  consumer-defensive:     0.30
+  energy:                 0.20
+  financial-services:     0.25
+  healthcare:             0.45
+  industrials:            0.30
+  real-estate:            0.15
+  technology:             0.50
+  utilities:              0.20

@@ -112,6 +112,18 @@ BALANCE_SHEET_LABELS = {
         "Inventory",
         "Inventories",
     ],
+    "goodwill": [
+        "Goodwill",
+    ],
+    "other_intangible_assets": [
+        "Other Intangible Assets",
+        "Other Intangibles",
+    ],
+    "goodwill_and_intangibles": [
+        "Goodwill And Other Intangible Assets",
+        "Goodwill And Intangible Assets",
+        "Goodwill And Other Intangibles",
+    ],
 }
 
 

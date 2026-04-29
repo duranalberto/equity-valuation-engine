@@ -8,17 +8,13 @@ from domain.valuation.models.pe import (
     PEValuationResult,
 )
 
-from ..utils import evaluate_price, generate_growth_scenarios
+from ..utils import evaluate_price, generate_growth_scenarios_with_assumption
 from .defaults import get_params
 
 
 def pe_valuation(input: PEValuationInput) -> PEValuationResult:
     sm = input.stock_metrics
 
-    # median_historical_pe stays Optional[float] in the domain model.
-    # PEChecker._check_valuation_inputs() is the firewall that blocks execution
-    # when it is None.  The guard here is a defensive backstop — it should
-    # never be reached in normal operation.
     median_pe = sm.valuation.median_historical_pe
     if median_pe is None:
         raise ValueError(
@@ -59,9 +55,14 @@ def execute_pe_scenarios(
     if params is None:
         params = get_params(stock_metrics)
 
-    growth_scenarios = generate_growth_scenarios(
-        stock_metrics, params.projection_years, params.margin_of_safety,
+    growth_scenario_set = generate_growth_scenarios_with_assumption(
+        stock_metrics,
+        params.projection_years,
+        params.margin_of_safety,
+        growth_model=params.growth_model,
+        reversion_enabled=params.reversion_enabled,
     )
+    growth_scenarios = growth_scenario_set.scenarios
 
     scenarios: Dict[str, PEValuationResult] = {}
     for name, growth_rate in growth_scenarios.items():
@@ -72,4 +73,8 @@ def execute_pe_scenarios(
         )
         scenarios[name] = pe_valuation(pe_input)
 
-    return PEValuationReport(scenarios=scenarios, params=params)
+    return PEValuationReport(
+        scenarios=scenarios,
+        params=params,
+        growth_assumption=growth_scenario_set.assumption,
+    )

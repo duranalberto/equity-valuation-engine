@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
-from domain.valuation.base import ValuationParams, ValuationReport
+from domain.valuation.base import GrowthAssumption, ValuationParams, ValuationReport
 
 
 @dataclass
@@ -13,6 +13,9 @@ class PEParameters(ValuationParams):
 
     ``discount_rate`` is a concrete field here — it is the rate used to
     discount future EPS-based value back to the present.
+
+    DESIGN-A/B: ``growth_model`` and ``reversion_enabled`` are inherited from
+    ValuationParams and forwarded to generate_growth_scenarios().
     """
     discount_rate: float = 0.09
 
@@ -36,5 +39,6 @@ class PEValuationResult:
 
 @dataclass
 class PEValuationReport(ValuationReport):
-    scenarios: Dict[str, PEValuationResult]
-    params:    PEParameters
+    scenarios:         Dict[str, PEValuationResult]
+    params:            PEParameters
+    growth_assumption: GrowthAssumption

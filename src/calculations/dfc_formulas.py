@@ -1,5 +1,7 @@
-from typing import List, Optional
-from domain.metrics.valuation import DiscountedCashFlow, WACC
+from typing import List, Optional, Tuple
+
+from domain.metrics.valuation import WACC, DiscountedCashFlow
+
 from .common import safe_div, safe_sum
 
 
@@ -41,11 +43,20 @@ def _discount_to_present(
     return result if result is not None else 0.0
 
 
+# BUG-E fix: return (terminal_value, fcf_tv_seed) so callers can expose the
+# averaging window seed used in the Gordon Growth terminal value calculation.
+# Previously this was an internal detail invisible to users and JSON consumers.
 def _terminal_value_gordon(
     last_n_fcfs: List[float],
     discount_rate: float,
     terminal_growth_rate: float,
-) -> float:
+) -> Tuple[float, float]:
+    """
+    Compute the Gordon Growth terminal value from the last N FCF projections.
+
+    Returns (terminal_value, fcf_tv_seed) where fcf_tv_seed is the 3-year
+    average FCF used as the base — now surfaced for transparency (BUG-E fix).
+    """
     if discount_rate <= terminal_growth_rate:
         raise ValueError(
             "Discount rate must be strictly greater than terminal growth rate."
@@ -55,7 +66,8 @@ def _terminal_value_gordon(
     n = min(3, len(last_n_fcfs))
     avg_fcf = sum(last_n_fcfs[-n:]) / float(n)
     fcf_next = avg_fcf * (1.0 + terminal_growth_rate)
-    return fcf_next / (discount_rate - terminal_growth_rate)
+    tv = fcf_next / (discount_rate - terminal_growth_rate)
+    return tv, avg_fcf  # BUG-E: return seed alongside tv
 
 
 def market_implied_wacc(
@@ -79,7 +91,7 @@ def market_implied_wacc(
             for i, fcf in enumerate(fcf_projections)
         )
         try:
-            tv = _terminal_value_gordon(last_fcfs, mid, terminal_growth_rate)
+            tv, _ = _terminal_value_gordon(last_fcfs, mid, terminal_growth_rate)
         except ValueError:
             value = float("inf")
         else:
@@ -108,7 +120,14 @@ def compute_discounted_cash_flow(
     fcf_projections: List[float],
     discount_rate: float,
     terminal_growth_rate: float,
-) -> DiscountedCashFlow:
+) -> Tuple[DiscountedCashFlow, float]:
+    """
+    Returns (DiscountedCashFlow, fcf_tv_seed).
+
+    fcf_tv_seed is the 3-year averaged FCF value used as the terminal value
+    base in the Gordon Growth model.  Callers should store this on
+    DCFValuationResult.fcf_tv_seed for transparency (BUG-E fix).
+    """
     if discount_rate <= 0:
         raise ValueError("Discount rate must be positive.")
     if not fcf_projections:
@@ -116,19 +135,20 @@ def compute_discounted_cash_flow(
 
     pv_fcfs        = _present_value_of_fcfs(fcf_projections, discount_rate)
     pv_fcfs_total  = safe_sum(*pv_fcfs)
-    terminal_value = _terminal_value_gordon(
+    terminal_value, fcf_tv_seed = _terminal_value_gordon(
         fcf_projections, discount_rate, terminal_growth_rate
     )
     pv_terminal = _discount_to_present(terminal_value, discount_rate, len(fcf_projections))
     ev = safe_sum(pv_fcfs_total, pv_terminal)
 
-    return DiscountedCashFlow(
+    dcf = DiscountedCashFlow(
         pv_fcfs=pv_fcfs,
         pv_fcfs_total=pv_fcfs_total,
         terminal_value=terminal_value,
         pv_terminal_value=pv_terminal,
         enterprise_value=ev,
     )
+    return dcf, fcf_tv_seed  # BUG-E: return seed
 
 
 def _equity_weight(market_cap: Optional[float], total_value: float) -> float:

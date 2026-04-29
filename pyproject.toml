@@ -16,5 +16,9 @@ dependencies = [
     "tabulate >= 0.10.0"
 ]
 
+[project.optional-dependencies]
+test = ["pytest >= 9.0.3"]
+dev = ["pytest >= 9.0.3"]
+
 [tool.setuptools.packages.find]
 where = ["src"]

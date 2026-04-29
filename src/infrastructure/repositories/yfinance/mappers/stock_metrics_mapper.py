@@ -88,6 +88,9 @@ def _make_balance_sheet_mapper() -> GenericMapper:
             "current_assets":       YfFinancialField(BALANCE_SHEET_LABELS["current_assets"],       Action.GET_LATEST_VALUE, Period.QUARTERLY, statement=Statement.BALANCE_SHEET),
             "current_liabilities":  YfFinancialField(BALANCE_SHEET_LABELS["current_liabilities"],  Action.GET_LATEST_VALUE, Period.QUARTERLY, statement=Statement.BALANCE_SHEET),
             "inventory":            YfFinancialField(BALANCE_SHEET_LABELS["inventory"],            Action.GET_LATEST_VALUE, Period.QUARTERLY, statement=Statement.BALANCE_SHEET),
+            "goodwill":             YfFinancialField(BALANCE_SHEET_LABELS["goodwill"],             Action.GET_LATEST_VALUE, Period.QUARTERLY, statement=Statement.BALANCE_SHEET),
+            "other_intangible_assets": YfFinancialField(BALANCE_SHEET_LABELS["other_intangible_assets"], Action.GET_LATEST_VALUE, Period.QUARTERLY, statement=Statement.BALANCE_SHEET),
+            "goodwill_and_intangibles": YfFinancialField(BALANCE_SHEET_LABELS["goodwill_and_intangibles"], Action.GET_LATEST_VALUE, Period.QUARTERLY, statement=Statement.BALANCE_SHEET),
         },
     )
 

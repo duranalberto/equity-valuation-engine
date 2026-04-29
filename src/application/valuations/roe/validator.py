@@ -3,12 +3,15 @@ from typing import List, Optional, Tuple
 from domain.core.missing import MissingReason
 from domain.core.missing_registry import MissingValueRegistry
 from domain.metrics.stock import StockMetrics
+from domain.valuation.models.roe import ROEParameters
 from domain.valuation.policies import (
     CheckFactor,
     FactorSeverity,
     ValuationChecker,
     ValuationCheckResult,
 )
+
+from .defaults import get_params
 
 # ---------------------------------------------------------------------------
 # BUG-8 fix + DESIGN-2 fix: unified block threshold = 6 (was 7).
@@ -31,9 +34,11 @@ class ROEChecker(ValuationChecker):
         self,
         stock_metrics: StockMetrics,
         registry: Optional[MissingValueRegistry] = None,
+        params: Optional[ROEParameters] = None,
     ):
         self._metrics  = stock_metrics
         self._registry = registry
+        self._params   = params if params is not None else get_params(stock_metrics)
         self._factors: List[CheckFactor] = []
         self._score = 0
 
@@ -170,6 +175,24 @@ class ROEChecker(ValuationChecker):
                 return_on_assets,
             )
 
+    def _check_roe_cap(self):
+        ratios = self._metrics.ratios
+        roe = ratios.return_on_equity if ratios else 0.0
+        roe_cap = self._params.roe_cap
+
+        if roe_cap is None or roe <= roe_cap:
+            return
+
+        self._add_factor(
+            "ROE Cap Applied",
+            f"Return on Equity is {roe:.2%}, above the configured sector cap "
+            f"of {roe_cap:.2%}. ROE valuation will cap terminal-income ROE at "
+            f"{roe_cap:.2%} to avoid leverage-inflation compounding.",
+            FactorSeverity.WARNING,
+            roe,
+            weight_override=0,
+        )
+
     def _check_buyback_dominance(self):
         """
         BUG-13 fix: inform user when buybacks dominate over dividends so they
@@ -222,6 +245,7 @@ class ROEChecker(ValuationChecker):
                 ),
                 factors=self._factors,
             )
+        self._check_roe_cap()
         self._check_leverage()
         self._check_asset_quality()
         self._check_buyback_dominance()

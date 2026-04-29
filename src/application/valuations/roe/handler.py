@@ -56,4 +56,4 @@ class ROEManager(ValuationManager[ROEValuationReport]):
         self,
         registry: Optional[MissingValueRegistry] = None,
     ) -> ValuationCheckResult:
-        return ROEChecker(self.stock_metrics, registry).evaluate()
+        return ROEChecker(self.stock_metrics, registry, self.params).evaluate()

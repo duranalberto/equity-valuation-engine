@@ -1,0 +1,90 @@
+# multiples.yaml — Sector Median EV/EBITDA and P/S percentile tables
+#
+# Used by:
+#   MODEL-1: EV/EBITDA relative valuation
+#   MODEL-2: P/S (Price/Sales) revenue multiple valuation
+#
+# Bear  = 25th-percentile multiple (conservative entry)
+# Base  = 50th-percentile (median)
+# Bull  = 75th-percentile (optimistic)
+#
+# All figures are rounded medians from cross-sectional analysis (2019-2024).
+# Keys must match domain.core.enums.Sectors values exactly.
+#
+# ─── EV/EBITDA multiples ──────────────────────────────────────────────────────
+ev_ebitda:
+  bear:
+    basic-materials:        6.0
+    communication-services: 7.0
+    consumer-cyclical:      8.0
+    consumer-defensive:     9.0
+    energy:                 4.5
+    financial-services:     8.0
+    healthcare:             10.0
+    industrials:            9.0
+    real-estate:            12.0
+    technology:             14.0
+    utilities:              9.0
+  base:
+    basic-materials:        8.0
+    communication-services: 10.0
+    consumer-cyclical:      12.0
+    consumer-defensive:     13.0
+    energy:                 7.0
+    financial-services:     12.0
+    healthcare:             15.0
+    industrials:            13.0
+    real-estate:            18.0
+    technology:             22.0
+    utilities:              13.0
+  bull:
+    basic-materials:        11.0
+    communication-services: 14.0
+    consumer-cyclical:      17.0
+    consumer-defensive:     17.0
+    energy:                 10.0
+    financial-services:     17.0
+    healthcare:             22.0
+    industrials:            18.0
+    real-estate:            25.0
+    technology:             32.0
+    utilities:              17.0
+
+# ─── P/S (Price / Sales) multiples ───────────────────────────────────────────
+ps_multiple:
+  bear:
+    basic-materials:        0.5
+    communication-services: 1.2
+    consumer-cyclical:      0.6
+    consumer-defensive:     0.8
+    energy:                 0.4
+    financial-services:     1.5
+    healthcare:             1.8
+    industrials:            1.0
+    real-estate:            3.5
+    technology:             3.5
+    utilities:              1.5
+  base:
+    basic-materials:        0.9
+    communication-services: 2.0
+    consumer-cyclical:      1.0
+    consumer-defensive:     1.2
+    energy:                 0.7
+    financial-services:     2.5
+    healthcare:             3.0
+    industrials:            1.6
+    real-estate:            5.5
+    technology:             6.5
+    utilities:              2.2
+  bull:
+    basic-materials:        1.4
+    communication-services: 3.2
+    consumer-cyclical:      1.6
+    consumer-defensive:     1.7
+    energy:                 1.1
+    financial-services:     3.8
+    healthcare:             4.5
+    industrials:            2.4
+    real-estate:            8.0
+    technology:             11.0
+    utilities:              3.0

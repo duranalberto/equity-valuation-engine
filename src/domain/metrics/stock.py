@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, dataclass_transform
 
@@ -25,6 +26,9 @@ _COD_CEILING_BY_SECTOR: dict[str, float] = {
     "utilities":              0.20,
 }
 _COD_CEILING_DEFAULT = 0.30
+_GROWTH_FLOOR = -0.20
+_GROWTH_CEILING = 0.50
+_MIN_ABS_FCF_FOR_CAGR = 1_000_000
 
 
 def _cod_ceiling(sector: Optional[Sectors]) -> float:
@@ -125,11 +129,19 @@ class BalanceSheet:
     current_assets:       float = 0.0
     current_liabilities:  float = 0.0
     inventory:            float = 0.0
+    goodwill:             float = 0.0
+    other_intangible_assets: float = 0.0
+    goodwill_and_intangibles: float = 0.0
     current_ratio: float = 0.0
     quick_ratio:   float = 0.0
     history: Optional[BalanceSheetHistory] = None
 
     def __post_init__(self) -> None:
+        if self.goodwill_and_intangibles == 0.0:
+            self.goodwill_and_intangibles = mf.safe_sum(
+                self.goodwill,
+                self.other_intangible_assets,
+            )
         self.current_ratio = safe_div(self.current_assets, self.current_liabilities) or 0.0
         self.quick_ratio   = mf.quick_ratio(self.current_assets, self.inventory, self.current_liabilities) or 0.0
 
@@ -141,8 +153,6 @@ class MarketData:
     market_cap:          float
     beta:                float = 1.0
     eps_ttm:             float = 0.0
-    # BUG-9 fix: pe_ttm explicitly typed as Optional[float] so None from yfinance
-    # (negative-EPS companies have no P/E) does not crash PEChecker comparisons.
     pe_ttm:              Optional[float] = None
     last_quarter_eps:    float = 0.0
     last_year_eps:       float = 0.0
@@ -167,16 +177,6 @@ class HistoricalData:
 @_bind_fields
 @dataclass(frozen=True)
 class Valuation:
-    """
-    Derived valuation inputs and multiples.
-
-    cost_of_debt is clamped to a sector-specific ceiling inside Valuation.build()
-    to prevent data-quality issues (e.g. tiny debt book vs. large interest expense)
-    from producing nonsensical WACC values.  When the raw ratio exceeds the ceiling
-    a DERIVED_FAILED diagnostic is emitted and cost_of_debt is set to 0.0 so the
-    DCF checker's existing High Cost of Debt guard fires correctly.
-    """
-
     highest_price:        float           = 0.0
     cost_of_debt:         float           = 0.0
     corporate_tax_rate:   float           = 0.0
@@ -186,9 +186,11 @@ class Valuation:
     fcf_cagr:             float           = 0.0
     forward_growth_rate:  float           = 0.0
     enterprise_value:     float           = 0.0
-    # BUG-5 fix: expose normalized FCF for display/downstream use
     normalized_fcf:       Optional[float] = None
     capex_spike_detected: bool            = False
+    # Legacy Phase 3 metadata slot. New valuation reports expose explicit
+    # GrowthAssumption details instead of mutating StockMetrics.
+    blend_growth_rate:    Optional[float] = None
 
     @classmethod
     def build(
@@ -210,7 +212,6 @@ class Valuation:
         _N = MissingReason.NOT_APPLICABLE
         _I = MissingReason.INSUFFICIENT_DATA
 
-        # --- corporate_tax_rate ---
         if corporate_tax_rate == 0.0:
             corporate_tax_rate = (safe_div(financials.tax_expense_ttm, financials.ebt_ttm) or 0.0)
             if corporate_tax_rate == 0.0:
@@ -221,7 +222,6 @@ class Valuation:
                     diagnostics.append(BuildDiagnostic("Valuation", "corporate_tax_rate", _Z,
                         "ebt_ttm is zero — tax rate is mathematically undefined"))
 
-        # --- cost_of_debt with ceiling (BUG-6 fix) ---
         if cost_of_debt == 0.0 and balance_sheet.total_debt != 0.0:
             raw_cod = (safe_div(abs(financials.interest_expense_ttm or 0.0), balance_sheet.total_debt) or 0.0)
             ceiling = _cod_ceiling(sector)
@@ -241,7 +241,6 @@ class Valuation:
         elif cost_of_debt == 0.0 and balance_sheet.total_debt == 0.0:
             diagnostics.append(BuildDiagnostic("Valuation", "cost_of_debt", _N, "no debt on balance sheet"))
 
-        # --- enterprise_value ---
         ev = mf.enterprise_value(
             market_data.market_cap, balance_sheet.total_debt, balance_sheet.cash_and_equivalents
         ) or 0.0
@@ -258,7 +257,6 @@ class Valuation:
             shares_outstanding=market_data.shares_outstanding,
         ) or 0.0
 
-        # --- forward_growth_rate ---
         forward_growth_rate: float = 0.0
         if (financials.history is not None
                 and financials.history.net_income_annual is not None
@@ -271,13 +269,20 @@ class Valuation:
                 forward_growth_rate = mf.cagr_from_series(eps_series) or 0.0
 
         if forward_growth_rate == 0.0:
-            forward_growth_rate = financials.net_income_growth
+            if financials.net_income_ttm < 0 and financials.net_income_growth != 0.0:
+                diagnostics.append(BuildDiagnostic(
+                    "Valuation",
+                    "forward_growth_rate",
+                    _D,
+                    "net_income_growth skipped because net_income_ttm is negative",
+                ))
+            else:
+                forward_growth_rate = financials.net_income_growth
 
         if forward_growth_rate == 0.0:
             diagnostics.append(BuildDiagnostic("Valuation", "forward_growth_rate", _D,
                 "all growth signals (NI CAGR, EPS CAGR, TTM growth) resolved to zero"))
 
-        # --- median historical P/E ---
         median_pe: Optional[float] = None
         if historical_data and historical_data.price_history:
             eps_history = historical_data.eps_history
@@ -289,18 +294,57 @@ class Valuation:
             diagnostics.append(BuildDiagnostic("Valuation", "median_historical_pe", _I,
                 "fewer than 3 valid (price, EPS) pairs in historical data"))
 
-        # --- FCF CAGR ---
+        def _fcf_too_small(values: List[float]) -> bool:
+            return any(
+                value is not None and abs(value) < _MIN_ABS_FCF_FOR_CAGR
+                for value in values
+            )
+
+        def _record_fcf_growth_bounds(raw_growth: float, source: str) -> None:
+            if raw_growth > _GROWTH_CEILING or raw_growth < _GROWTH_FLOOR:
+                diagnostics.append(BuildDiagnostic(
+                    "Valuation",
+                    "fcf_cagr",
+                    _D,
+                    f"{source} produced FCF CAGR {raw_growth:.1%}, outside "
+                    f"growth bounds [{_GROWTH_FLOOR:.0%}, {_GROWTH_CEILING:.0%}]. "
+                    "Projection helpers will clamp this signal if selected.",
+                ))
+
         fcf_cagr: float = 0.0
         if (cash_flow.history is not None
                 and cash_flow.history.fcf_annual is not None
                 and len(cash_flow.history.fcf_annual) >= 2):
-            fcf_cagr = mf.cagr_from_series(cash_flow.history.fcf_annual) or 0.0
+            fcf_series = cash_flow.history.fcf_annual
+            if _fcf_too_small(fcf_series):
+                diagnostics.append(BuildDiagnostic(
+                    "Valuation",
+                    "fcf_cagr",
+                    _D,
+                    f"FCF CAGR skipped because annual FCF history contains values "
+                    f"below ${_MIN_ABS_FCF_FOR_CAGR:,.0f}; near-zero bases distort CAGR.",
+                ))
+            else:
+                fcf_cagr = mf.cagr_from_series(fcf_series) or 0.0
+                if fcf_cagr != 0.0:
+                    _record_fcf_growth_bounds(fcf_cagr, "annual FCF history")
 
         if fcf_cagr == 0.0:
             fcf_now  = cash_flow.fcf_ttm
             fcf_prev = cash_flow.last_year_fcf
             if fcf_now != 0.0 and fcf_prev > 0.0:
-                fcf_cagr = (fcf_now / fcf_prev) - 1.0
+                if _fcf_too_small([fcf_now, fcf_prev]):
+                    diagnostics.append(BuildDiagnostic(
+                        "Valuation",
+                        "fcf_cagr",
+                        _D,
+                        f"TTM/prior-year FCF CAGR fallback skipped because one or "
+                        f"both FCF values are below ${_MIN_ABS_FCF_FOR_CAGR:,.0f}; "
+                        "near-zero bases distort CAGR.",
+                    ))
+                else:
+                    fcf_cagr = (fcf_now / fcf_prev) - 1.0
+                    _record_fcf_growth_bounds(fcf_cagr, "TTM/prior-year FCF fallback")
 
         if fcf_cagr == 0.0:
             if cash_flow.history is None or cash_flow.history.fcf_annual is None:
@@ -310,14 +354,12 @@ class Valuation:
                 diagnostics.append(BuildDiagnostic("Valuation", "fcf_cagr", _I,
                     "fewer than 2 annual FCF data points"))
 
-        # --- BUG-5 fix: normalized FCF and capex spike detection ---
         normalized_fcf: Optional[float] = None
         capex_spike_detected: bool = False
         if (cash_flow.history is not None
                 and cash_flow.history.capex_annual is not None
                 and len(cash_flow.history.capex_annual) >= 3):
             capex_series = cash_flow.history.capex_annual
-            # median of all-but-last year as the "normal" capex
             historical_capex = [abs(c) for c in capex_series[:-1] if c is not None]
             if historical_capex:
                 sorted_capex = sorted(historical_capex)
@@ -337,6 +379,10 @@ class Valuation:
                         f"normalized_fcf={normalized_fcf/1e9:.1f}B uses median capex instead."
                     ))
 
+        # Growth metadata is computed by valuation scenario helpers and exposed
+        # on valuation reports. StockMetrics stays immutable and audit-stable.
+        blend_growth_rate: Optional[float] = None
+
         instance = cls(
             highest_price=highest_price,
             cost_of_debt=cost_of_debt,
@@ -349,6 +395,7 @@ class Valuation:
             enterprise_value=ev,
             normalized_fcf=normalized_fcf,
             capex_spike_detected=capex_spike_detected,
+            blend_growth_rate=blend_growth_rate,
         )
         return instance, diagnostics
 
@@ -356,25 +403,26 @@ class Valuation:
 @_bind_fields
 @dataclass(frozen=True)
 class Ratios:
-    fcf_margin:           float = 0.0
-    price_to_fcf:         float = 0.0
-    roic:                 float = 0.0
-    fcf_yield:            float = 0.0
-    debt_to_equity:       float = 0.0
-    ebit_margin:          float = 0.0
-    peg_ratio:            float = 0.0
-    return_on_equity:     float = 0.0
-    return_on_assets:     float = 0.0
-    price_to_sales:       float = 0.0
-    price_to_book:        float = 0.0
-    dividend_yield:       float = 0.0
-    payout_ratio:         float = 0.0
-    ev_ebit:              float = 0.0
-    ev_ebitda:            float = 0.0
-    book_value_per_share: float = 0.0
-    interest_coverage:    float = 0.0
-    # BUG-13 fix: expose buyback yield alongside dividend yield
-    buyback_yield:        float = 0.0
+    fcf_margin:              float = 0.0
+    price_to_fcf:            float = 0.0
+    roic:                    float = 0.0
+    fcf_yield:               float = 0.0
+    debt_to_equity:          float = 0.0
+    ebit_margin:             float = 0.0
+    peg_ratio:               float = 0.0
+    # BUG-F fix: record which growth signal was used as the PEG denominator.
+    peg_growth_source:       str   = ""
+    return_on_equity:        float = 0.0
+    return_on_assets:        float = 0.0
+    price_to_sales:          float = 0.0
+    price_to_book:           float = 0.0
+    dividend_yield:          float = 0.0
+    payout_ratio:            float = 0.0
+    ev_ebit:                 float = 0.0
+    ev_ebitda:               float = 0.0
+    book_value_per_share:    float = 0.0
+    interest_coverage:       float = 0.0
+    buyback_yield:           float = 0.0
     total_shareholder_yield: float = 0.0
 
     @classmethod
@@ -430,13 +478,21 @@ class Ratios:
         if fcf_yield == 0.0 and cash_flow.fcf_ttm == 0.0:
             diagnostics.append(BuildDiagnostic("Ratios", "fcf_yield", _Z, "fcf_ttm is zero"))
 
-        # BUG-9 fix: pe_ttm is Optional[float], guard None before comparison
+        # BUG-F fix: PEG ratio uses forward_growth_rate as primary denominator.
         peg_ratio = 0.0
-        if pe_ttm is not None and pe_ttm != 0.0 and financials.net_income_growth != 0.0:
-            peg_ratio = safe_div(pe_ttm, financials.net_income_growth) or 0.0
-        if peg_ratio == 0.0 and financials.net_income_growth == 0.0:
+        peg_growth_source = ""
+        if pe_ttm is not None and pe_ttm != 0.0:
+            forward_gr = valuation.forward_growth_rate if valuation else 0.0
+            if forward_gr and forward_gr != 0.0 and math.isfinite(forward_gr):
+                peg_ratio = safe_div(pe_ttm, forward_gr) or 0.0
+                peg_growth_source = "forward_ni_cagr"
+            elif financials.net_income_growth != 0.0:
+                peg_ratio = safe_div(pe_ttm, financials.net_income_growth) or 0.0
+                peg_growth_source = "ttm_ni_growth"
+
+        if peg_ratio == 0.0:
             diagnostics.append(BuildDiagnostic("Ratios", "peg_ratio", _Z,
-                "net_income_growth is zero — PEG is undefined"))
+                "Neither forward_growth_rate nor net_income_growth available for PEG denominator"))
 
         price_to_sales = safe_div(market_cap, financials.revenue_ttm) or 0.0
         price_to_book  = mf.price_to_book(current_price, balance_sheet.total_equity, shares_outstanding) or 0.0
@@ -472,7 +528,6 @@ class Ratios:
             float(shares_outstanding) if shares_outstanding else None,
         ) or 0.0
 
-        # BUG-13 fix: buyback yield and total shareholder yield
         buyback_yield = 0.0
         if market_cap > 0 and cash_flow.share_buybacks_ttm != 0.0:
             buyback_yield = safe_div(abs(cash_flow.share_buybacks_ttm), market_cap) or 0.0
@@ -486,6 +541,7 @@ class Ratios:
             debt_to_equity=debt_to_equity,
             ebit_margin=ebit_margin,
             peg_ratio=peg_ratio,
+            peg_growth_source=peg_growth_source,
             return_on_equity=return_on_equity,
             return_on_assets=return_on_assets,
             price_to_sales=price_to_sales,

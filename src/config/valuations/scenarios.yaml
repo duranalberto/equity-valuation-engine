@@ -83,3 +83,50 @@ scenario_volatility:
     real-estate:            0.015
     technology:             0.025
     utilities:              0.010
+
+# ─── DESIGN-B: Sector long-run growth rates for mean-reversion ────────────────
+#
+# sector_long_run_growth: the rate each sector's growth converges toward over
+# the projection window when reversion_enabled=True.
+#
+# Rationale:
+#   technology:             8.0 % — structural AI/cloud tailwinds above GDP
+#   communication-services: 5.0 % — maturing social/telco mix
+#   consumer-cyclical:      5.0 % — mean-reverts to consumer spending growth
+#   consumer-defensive:     4.0 % — near-GDP; pricing power limited
+#   energy:                 3.5 % — commodity cycle + energy transition headwinds
+#   financial-services:     5.5 % — credit cycle mean-reversion
+#   healthcare:             6.0 % — aging demographics structural support
+#   industrials:            4.5 % — capex cycle dependent
+#   real-estate:            4.0 % — rate-sensitive; long-run near inflation+
+#   utilities:              2.5 % — regulated; near GDP
+#   basic-materials:        3.5 % — commodity-price mean-reversion
+sector_long_run_growth:
+  basic-materials:        0.035
+  communication-services: 0.050
+  consumer-cyclical:      0.050
+  consumer-defensive:     0.040
+  energy:                 0.035
+  financial-services:     0.055
+  healthcare:             0.060
+  industrials:            0.045
+  real-estate:            0.040
+  technology:             0.080
+  utilities:              0.025
+
+# ─── DESIGN-B: Per-scenario reversion speed multipliers ──────────────────────
+#
+# reversion_speed: controls how fast each scenario reverts to the long-run mean.
+# The linear taper formula is:
+#   year_k_growth = base_growth + (long_run - base_growth) * (k / years) * speed
+#
+# Bear: faster reversion (1.3×) — pessimistic; growth falls sooner
+# Base: standard linear reversion (1.0×)
+# Bull: slower reversion (0.7×) — optimistic; growth stays elevated longer
+#
+# These are global (not sector-specific) — sector differentiation is carried
+# by sector_long_run_growth above.
+reversion_speed:
+  Bear:  1.3
+  Base:  1.0
+  Bull:  0.7
