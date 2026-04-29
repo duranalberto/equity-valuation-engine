@@ -39,8 +39,6 @@ def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
     fcf_seed = sm.cash_flow.fcf_ttm
     fcf_seed_source = "raw"
 
-    # BUG-5 fix: when a capex spike has been detected use the normalized FCF
-    # as the DCF seed instead of the raw (distorted) FCF_ttm.
     if sm.valuation.capex_spike_detected and sm.valuation.normalized_fcf is not None:
         fcf_seed = sm.valuation.normalized_fcf
         fcf_seed_source = "normalized"
@@ -50,7 +48,8 @@ def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
         growth_rates=input.growth_rates,
     )
 
-    dcf_output = compute_discounted_cash_flow(
+    # BUG-E fix: compute_discounted_cash_flow now returns (dcf_output, fcf_tv_seed)
+    dcf_output, fcf_tv_seed = compute_discounted_cash_flow(
         fcf_projections,
         input.wacc.wacc,
         input.params.terminal_growth_rate,
@@ -92,6 +91,7 @@ def dcf_valuation(input: DCFInputData) -> DCFValuationResult:
         dcf=dcf_output,
         intrinsic_value_per_share=intrinsic_value,
         implied_wacc=implied_wacc,
+        fcf_tv_seed=fcf_tv_seed,  # BUG-E: surface the TV averaging seed
     )
 
 
@@ -113,7 +113,7 @@ def _compute_sensitivity(
                 row.append(None)
                 continue
             try:
-                dcf_out = compute_discounted_cash_flow(base_fcf_projections, wacc_rate, tgr)
+                dcf_out, _ = compute_discounted_cash_flow(base_fcf_projections, wacc_rate, tgr)
                 equity_value = dcf_out.enterprise_value - total_debt + cash
                 iv = intrinsic_value_per_share(equity_value, shares)
                 row.append(round(iv, 4))
@@ -121,6 +121,41 @@ def _compute_sensitivity(
                 row.append(None)
         matrix.append(row)
     return matrix
+
+
+def _derive_sensitivity_spreads(
+    stock_metrics: StockMetrics,
+    base_wacc: float,
+    base_terminal_growth: float,
+) -> tuple[float, float]:
+    """
+    DESIGN-C fix: derive WACC and TGR spreads dynamically from beta and sector.
+
+    WACC spread: wacc_spread = max(0.02, min(0.08, beta * 0.025))
+      - beta=0.8 → 0.02 (±1pp, stable company)
+      - beta=1.5 → 0.0375 (±1.9pp, moderate)
+      - beta=2.0 → 0.05 (±2.5pp, volatile)
+      - beta=2.07 (AI/C3.ai) → capped at 0.08 (maximum range)
+
+    TGR spread: loaded from dcf.yaml tgr_spread section (sector-specific).
+    Falls back to ±1.0pp (0.02 total) if not configured.
+
+    Previously both were hardcoded (wacc_spread=0.04, tgr_spread=0.02), which
+    applied the same grid to all companies regardless of uncertainty profile.
+    """
+    beta = getattr(stock_metrics.market_data, "beta", 1.0) or 1.0
+    wacc_spread = max(0.02, min(0.08, beta * 0.025))
+
+    # TGR spread: sector-differentiated via config; fall back to ±1pp
+    try:
+        from config.config_loader import load_valuation_config
+        cfg = load_valuation_config("dcf")
+        sector = getattr(stock_metrics.profile, "sector", None)
+        tgr_spread = cfg.get_float("tgr_spread", sector, default=0.02)
+    except Exception:
+        tgr_spread = 0.02
+
+    return wacc_spread, tgr_spread
 
 
 def build_sensitivity_report(
@@ -131,11 +166,17 @@ def build_sensitivity_report(
     scenario_name: str = "Base",
     wacc_steps: int = 7,
     tgr_steps: int = 5,
-    # BUG-11 fix: widened from ±1pp to ±2pp WACC and ±0.5pp to ±1pp TGR
-    # so the table captures the realistic estimation error range.
-    wacc_spread: float = 0.04,
-    tgr_spread: float = 0.02,
+    # DESIGN-C: these are now computed dynamically; explicit overrides still accepted.
+    wacc_spread: Optional[float] = None,
+    tgr_spread: Optional[float] = None,
 ) -> DCFSensitivityReport:
+    # DESIGN-C fix: derive spreads from beta/sector when not explicitly overridden.
+    derived_wacc_spread, derived_tgr_spread = _derive_sensitivity_spreads(
+        stock_metrics, base_wacc, base_terminal_growth
+    )
+    effective_wacc_spread = wacc_spread if wacc_spread is not None else derived_wacc_spread
+    effective_tgr_spread  = tgr_spread  if tgr_spread  is not None else derived_tgr_spread
+
     def _axis(centre: float, spread: float, steps: int) -> List[float]:
         if steps <= 1:
             return [centre]
@@ -146,8 +187,8 @@ def build_sensitivity_report(
             raw.sort()
         return [round(v, 6) for v in raw]
 
-    wacc_values = _axis(base_wacc, wacc_spread, wacc_steps)
-    tgr_values  = _axis(base_terminal_growth, tgr_spread, tgr_steps)
+    wacc_values = _axis(base_wacc, effective_wacc_spread, wacc_steps)
+    tgr_values  = _axis(base_terminal_growth, effective_tgr_spread, tgr_steps)
 
     matrix = _compute_sensitivity(
         stock_metrics, base_fcf_projections, wacc_values, tgr_values
@@ -160,6 +201,9 @@ def build_sensitivity_report(
         base_wacc=base_wacc,
         base_terminal_growth=base_terminal_growth,
         scenario_name=scenario_name,
+        # DESIGN-C: expose the derived spreads for transparency
+        derived_wacc_spread=derived_wacc_spread,
+        derived_tgr_spread=derived_tgr_spread,
     )
 
 

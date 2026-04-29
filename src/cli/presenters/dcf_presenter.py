@@ -29,9 +29,13 @@ def build_scenario_summary_table(report):
             status_colored = f"{colors.RED.value}{status}{colors.RESET.value}"
         else:
             status_colored = status
+
+        # BUG-E: annotate seed source in the enterprise value column
+        seed_note = f" [{r.fcf_seed_source}]" if r.fcf_seed_source else ""
+
         summary_table.append([
             scenario_name,
-            fmt_num(r.dcf.enterprise_value / 1e9) + " B",
+            fmt_num(r.dcf.enterprise_value / 1e9) + " B" + seed_note,
             fmt_num(r.intrinsic_value_per_share),
             fmt_num(r.dcf.pv_fcfs_total),
             fmt_num(r.dcf.terminal_value),
@@ -66,14 +70,27 @@ def build_pv_fcf_table(report):
     return _build_projection_table(report, lambda r: r.dcf.pv_fcfs)
 
 
-def build_sensitivity_table(sens: DCFSensitivityReport) -> tuple[list, list]:
+# BUG-E: new table — show TV seed per scenario
+def build_tv_seed_table(report) -> list:
     """
-    Returns (headers, rows) for a tabulate call.
+    BUG-E: show the 3-year average FCF seed used for each scenario's terminal value.
+    Highlights the discrepancy between year-N FCF in projections and the TV base.
+    """
+    rows = []
+    for scenario_name, r in report.scenarios.items():
+        tv_seed = getattr(r, "fcf_tv_seed", None)
+        year_n  = r.fcf_projections[-1] if r.fcf_projections else None
+        diff    = ((year_n - tv_seed) / tv_seed) if (year_n and tv_seed and tv_seed != 0) else None
+        rows.append([
+            scenario_name,
+            fmt_num(tv_seed),
+            fmt_num(year_n),
+            fmt_pct(diff) if diff is not None else "—",
+        ])
+    return rows
 
-    Rows  → WACC values (descending so higher WACC is at top).
-    Cols  → terminal growth rate values (ascending left to right).
-    The base-case cell is marked with a '*' suffix.
-    """
+
+def build_sensitivity_table(sens: DCFSensitivityReport) -> tuple[list, list]:
     tgr_headers = ["WACC \\ TGR"] + [fmt_pct(t) for t in sens.terminal_growth_values]
 
     rows = []
@@ -136,11 +153,25 @@ def cli_print_valuation(metrics: StockMetrics, report: DCFValuationReport) -> No
     pv_headers = ["Scenario"] + [f"Year {i + 1}" for i in range(pv_len)] + ["Total Growth"]
     print(tabulate(build_pv_fcf_table(report), headers=pv_headers, tablefmt="fancy_grid"))
 
+    # BUG-E: TV seed transparency table
+    if any(getattr(r, "fcf_tv_seed", None) is not None for r in report.scenarios.values()):
+        print("\n-- Terminal Value FCF Seed (3-yr avg) vs Year-N FCF --")
+        print("   (TV seed is the 3-year average FCF used as the Gordon Growth base)")
+        tv_headers = ["Scenario", "TV Seed (3yr avg)", "Year-N FCF", "Year-N vs Seed"]
+        print(tabulate(build_tv_seed_table(report), headers=tv_headers, tablefmt="fancy_grid"))
+
     if report.sensitivity is not None:
         sens = report.sensitivity
+        spread_note = ""
+        # DESIGN-C: show derived spread info if available
+        if sens.derived_wacc_spread is not None:
+            spread_note = (
+                f" (WACC spread={fmt_pct(sens.derived_wacc_spread)} derived from beta"
+                f", TGR spread={fmt_pct(sens.derived_tgr_spread)} from sector)"
+            )
         print(
             f"\n-- Intrinsic Value Sensitivity: WACC × Terminal Growth Rate "
-            f"({sens.scenario_name} scenario FCFs) --"
+            f"({sens.scenario_name} scenario FCFs){spread_note} --"
         )
         print(
             f"   (* marks base-case cell: WACC={fmt_pct(sens.base_wacc)}, "

@@ -39,6 +39,10 @@ class DCFValuationResult:
     dcf:                       DiscountedCashFlow
     intrinsic_value_per_share: float
     implied_wacc:              float
+    # BUG-E fix: expose the 3-year average FCF used as the terminal value seed.
+    # Previously this was an undisclosed smoothing detail inside _terminal_value_gordon().
+    # Surfacing it allows analysts to see why the TV base differs from year-N FCF.
+    fcf_tv_seed: Optional[float] = None
 
 
 @dataclass
@@ -49,6 +53,10 @@ class DCFSensitivityReport:
     base_wacc:              float
     base_terminal_growth:   float
     scenario_name:          str = "Base"
+    # DESIGN-C fix: expose dynamically derived spreads so consumers can see
+    # why the sensitivity grid has the range it does.
+    derived_wacc_spread:    Optional[float] = None   # = f(beta)
+    derived_tgr_spread:     Optional[float] = None   # = f(sector terminal_growth variance)
 
 
 @dataclass

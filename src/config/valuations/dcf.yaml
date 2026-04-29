@@ -54,3 +54,32 @@ terminal_growth_rate:
   real-estate:            0.018
   technology:             0.022
   utilities:              0.018
+
+# ─── DESIGN-C fix: sector-differentiated TGR sensitivity spread ────────────────
+#
+# Used by build_sensitivity_report() in dcf/valuation.py to derive the TGR
+# axis range on the sensitivity table.  Replaces the hardcoded 0.02 spread
+# that previously applied uniformly to all sectors.
+#
+# Rationale:
+#   technology:       ±1.5pp — wide range; growth uncertainty in terminal value is high
+#   utilities:        ±0.5pp — tightly regulated; terminal growth near GDP
+#   real-estate:      ±0.8pp — predictable but sensitive to rate cycle
+#   healthcare:       ±1.0pp — pipeline + patent cliff creates moderate uncertainty
+#   energy:           ±1.2pp — commodity cycle introduces meaningful TGR uncertainty
+#   All others:       ±1.0pp — balanced default
+#
+# Note: these are TOTAL spreads (centre ± spread/2).  A value of 0.03 means
+# the TGR axis runs from (base_tgr − 1.5pp) to (base_tgr + 1.5pp).
+tgr_spread:
+  basic-materials:        0.020
+  communication-services: 0.020
+  consumer-cyclical:      0.020
+  consumer-defensive:     0.015
+  energy:                 0.024
+  financial-services:     0.020
+  healthcare:             0.020
+  industrials:            0.020
+  real-estate:            0.016
+  technology:             0.030
+  utilities:              0.010
