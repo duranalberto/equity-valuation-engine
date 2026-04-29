@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
+    """
+    Compute a single ROE scenario.
+
+    BUG-C fix: apply roe_cap from params before computing terminal income.
+    When the live ROE exceeds the sector cap the capped value is used and
+    ``roe_was_capped=True`` is set on the result so presenters / downstream
+    consumers can annotate accordingly.
+    """
     equity_per_share_progression: List[float] = []
     dividend_progression: List[float] = []
     npv_dividend_progression: List[float] = []
@@ -48,11 +56,26 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
     if ratios is None:
         raise ValueError("ratios must be available for ROE valuation.")
 
-    return_on_equity = ratios.return_on_equity
-    if return_on_equity == 0.0:
+    raw_roe = ratios.return_on_equity
+    if raw_roe == 0.0:
         raise ValueError("return_on_equity must be non-zero for ROE valuation.")
 
-    year_n_income      = return_on_equity * equity_per_share_progression[-1]
+    # ── BUG-C fix: cap leverage-inflated ROE ──────────────────────────────────
+    roe_was_capped = False
+    effective_roe = raw_roe
+    if pm.roe_cap is not None and raw_roe > pm.roe_cap:
+        logger.warning(
+            "[%s] ROE %.2f%% exceeds sector cap %.2f%%.  "
+            "Terminal income will use capped ROE to prevent leverage-inflation compounding.",
+            sm.profile.ticker,
+            raw_roe * 100,
+            pm.roe_cap * 100,
+        )
+        effective_roe = pm.roe_cap
+        roe_was_capped = True
+    # ─────────────────────────────────────────────────────────────────────────
+
+    year_n_income      = effective_roe * equity_per_share_progression[-1]
     required_value     = year_n_income / pm.discount_rate
     npv_required_value = required_value / ((1 + pm.discount_rate) ** pm.projection_years)
     npv_dividends      = sum(npv_dividend_progression)
@@ -74,6 +97,10 @@ def roe_valuation(input: ROEValuationInput) -> ROEValuationResult:
         npv_required_value=npv_required_value,
         npv_dividends=npv_dividends,
         intrinsic_value=intrinsic_value,
+        roe_was_capped=roe_was_capped,
+        roe_applied=effective_roe,
+        # buyback_substituted is set by execute_roe_scenarios() below
+        buyback_substituted=input.buyback_substituted,
     )
 
 
@@ -83,21 +110,43 @@ def execute_roe_scenarios(
 ) -> ROEValuationReport:
     """
     Build Bear / Base / Bull ROE valuation scenarios.
+
+    BUG-B fix: when dividends_paid_ttm is zero but share buybacks are
+    positive, substitute buyback yield as the per-share distribution
+    component.  This aligns the valuation with the promise already made
+    by ROEChecker._check_buyback_dominance().
+
+    The substitution flag is propagated into every ROEValuationResult so
+    that presenters can annotate the output clearly.
     """
     if params is None:
         params = get_params(stock_metrics)
 
-    # dividends_paid_ttm is float = 0.0 — no None guard needed.
-    # abs() normalises the sign (yfinance sometimes returns negative outflows).
     raw_dividends = abs(stock_metrics.cash_flow.dividends_paid_ttm)
+    raw_buybacks  = abs(stock_metrics.cash_flow.share_buybacks_ttm)
+    shares        = stock_metrics.market_data.shares_outstanding
 
-    dividend_rate_per_share = safe_div(
-        raw_dividends,
-        stock_metrics.market_data.shares_outstanding,
-    )
+    # ── BUG-B fix: substitute buyback yield when dividends are zero ───────────
+    buyback_substituted = False
+    if raw_dividends == 0.0 and raw_buybacks > 0.0:
+        distribution_pool = raw_buybacks
+        buyback_substituted = True
+        logger.info(
+            "[%s] ROE model: dividends_paid_ttm is zero.  "
+            "Using share_buybacks_ttm (%.2fB) as distribution component "
+            "(buyback yield = %.2f%%).",
+            stock_metrics.profile.ticker,
+            raw_buybacks / 1e9,
+            (raw_buybacks / stock_metrics.market_data.market_cap) * 100
+            if stock_metrics.market_data.market_cap > 0 else 0.0,
+        )
+    else:
+        distribution_pool = raw_dividends
+    # ─────────────────────────────────────────────────────────────────────────
+
+    dividend_rate_per_share = safe_div(distribution_pool, shares)
 
     if dividend_rate_per_share is None:
-        shares = stock_metrics.market_data.shares_outstanding
         logger.error(
             "ROE valuation aborted for %s: shares_outstanding is %s. "
             "Call ROEChecker.evaluate() first to surface this as a validation error.",
@@ -121,6 +170,7 @@ def execute_roe_scenarios(
             dividend_rate_per_share=dividend_rate_per_share,
             growth_rates=growth_rate,
             params=params,
+            buyback_substituted=buyback_substituted,
         )
         scenarios[name] = roe_valuation(roe_input)
 

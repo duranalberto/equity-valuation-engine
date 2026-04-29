@@ -28,3 +28,32 @@ discount_rate:
   real-estate:            0.095
   technology:             0.110
   utilities:              0.085
+
+# ─── BUG-C fix: ROE cap by sector ─────────────────────────────────────────────
+#
+# Caps the return_on_equity used in terminal income calculation to prevent
+# leverage-inflated ROE from compounding unconstrained over the projection window.
+#
+# Rationale per sector:
+#   technology:             35 % — mature SaaS / infrastructure; excludes buyback-
+#                                   compressed equity artefacts (ORCL, ADBE)
+#   financial-services:     20 % — regulatory capital constraints dampen ROE
+#   real-estate:            15 % — capital-intensive; REITs distribute most income
+#   utilities:              14 % — regulated returns; ROE bounded by rate cases
+#   consumer-defensive:     28 % — stable margins but commodity pricing limits upside
+#   healthcare:             30 % — pipeline risk; high ROIC in pharma, lower in services
+#   All others:             30 % — balanced ceiling for non-capital-constrained sectors
+#
+# Set a sector key to null to disable the cap for that sector.
+roe_cap:
+  basic-materials:        0.30
+  communication-services: 0.30
+  consumer-cyclical:      0.30
+  consumer-defensive:     0.28
+  energy:                 0.25
+  financial-services:     0.20
+  healthcare:             0.30
+  industrials:            0.28
+  real-estate:            0.15
+  technology:             0.35
+  utilities:              0.14
